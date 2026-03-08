@@ -1,0 +1,267 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>SEKKITO — Plant Intelligence Dashboard</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700;900&family=Space+Mono:ital,wght@0,400;0,700;1,400&display=swap" rel="stylesheet" />
+  <!-- MQTT.js over WebSocket -->
+  <script src="https://unpkg.com/mqtt@4.3.7/dist/mqtt.min.js"></script>
+  <!-- Firebase -->
+  <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-database-compat.js"></script>
+  <!-- Chart.js -->
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-date-fns@3.0.0/dist/chartjs-adapter-date-fns.bundle.min.js"></script>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+
+<!-- ── SCANLINE OVERLAY ────────────────────── -->
+<div class="scanline"></div>
+
+<!-- ── SIDEBAR ────────────────────────────── -->
+<aside class="sidebar" id="sidebar">
+  <div class="logo">
+    <span class="logo-icon">◈</span>
+    <div>
+      <div class="logo-title">SEKKITO</div>
+      <div class="logo-sub">PLANT INTELLIGENCE</div>
+    </div>
+  </div>
+
+  <nav class="nav">
+    <button class="nav-btn active" data-page="dashboard">
+      <span class="nav-icon">◉</span> Dashboard
+    </button>
+    <button class="nav-btn" data-page="analytics">
+      <span class="nav-icon">◈</span> Analytics
+    </button>
+    <button class="nav-btn" data-page="camera">
+      <span class="nav-icon">◎</span> Camera Hub
+    </button>
+    <button class="nav-btn" data-page="ai">
+      <span class="nav-icon">◆</span> AI Portal
+    </button>
+  </nav>
+
+  <div class="mqtt-status-bar">
+    <div class="status-dot" id="statusDot"></div>
+    <span id="statusText">CONNECTING</span>
+  </div>
+</aside>
+
+<!-- ── HAMBURGER ──────────────────────────── -->
+<button class="hamburger" id="hamburger">☰</button>
+
+<!-- ── MAIN ───────────────────────────────── -->
+<main class="main">
+
+  <!-- DASHBOARD PAGE -->
+  <section class="page active" id="page-dashboard">
+    <div class="page-header">
+      <h1 class="page-title">LIVE SENSORS</h1>
+      <div class="last-updated" id="lastUpdated">— last update: --:--:--</div>
+    </div>
+
+    <div class="gauge-grid">
+      <div class="gauge-card" data-key="air_temp">
+        <div class="gauge-label">AIR TEMP</div>
+        <div class="gauge-wrap">
+          <svg viewBox="0 0 120 70" class="arc-svg">
+            <path class="arc-bg" d="M10,65 A55,55 0 0,1 110,65"/>
+            <path class="arc-fill" id="arc-air_temp" d="M10,65 A55,55 0 0,1 10,65" stroke="#ff7f50"/>
+          </svg>
+          <div class="gauge-value"><span id="val-air_temp">--</span><em>°C</em></div>
+        </div>
+        <div class="gauge-range">0 — 50°C</div>
+      </div>
+
+      <div class="gauge-card" data-key="air_hum">
+        <div class="gauge-label">HUMIDITY</div>
+        <div class="gauge-wrap">
+          <svg viewBox="0 0 120 70" class="arc-svg">
+            <path class="arc-bg" d="M10,65 A55,55 0 0,1 110,65"/>
+            <path class="arc-fill" id="arc-air_hum" d="M10,65 A55,55 0 0,1 10,65" stroke="#4fc3f7"/>
+          </svg>
+          <div class="gauge-value"><span id="val-air_hum">--</span><em>%</em></div>
+        </div>
+        <div class="gauge-range">0 — 100%</div>
+      </div>
+
+      <div class="gauge-card" data-key="water_level">
+        <div class="gauge-label">WATER LEVEL</div>
+        <div class="gauge-wrap">
+          <svg viewBox="0 0 120 70" class="arc-svg">
+            <path class="arc-bg" d="M10,65 A55,55 0 0,1 110,65"/>
+            <path class="arc-fill" id="arc-water_level" d="M10,65 A55,55 0 0,1 10,65" stroke="#00e5ff"/>
+          </svg>
+          <div class="gauge-value"><span id="val-water_level">--</span><em>%</em></div>
+        </div>
+        <div class="gauge-range">0 — 100%</div>
+      </div>
+
+      <div class="gauge-card" data-key="light">
+        <div class="gauge-label">LIGHT LEVEL</div>
+        <div class="gauge-wrap">
+          <svg viewBox="0 0 120 70" class="arc-svg">
+            <path class="arc-bg" d="M10,65 A55,55 0 0,1 110,65"/>
+            <path class="arc-fill" id="arc-light" d="M10,65 A55,55 0 0,1 10,65" stroke="#ffe57f"/>
+          </svg>
+          <div class="gauge-value"><span id="val-light">--</span><em>%</em></div>
+        </div>
+        <div class="gauge-range">0 — 100%</div>
+      </div>
+
+      <div class="gauge-card wide" data-key="water_temp">
+        <div class="gauge-label">WATER TEMP</div>
+        <div class="gauge-wrap">
+          <svg viewBox="0 0 120 70" class="arc-svg">
+            <path class="arc-bg" d="M10,65 A55,55 0 0,1 110,65"/>
+            <path class="arc-fill" id="arc-water_temp" d="M10,65 A55,55 0 0,1 10,65" stroke="#69f0ae"/>
+          </svg>
+          <div class="gauge-value"><span id="val-water_temp">--</span><em>°C</em></div>
+        </div>
+        <div class="gauge-range">0 — 50°C</div>
+      </div>
+
+      <div class="gauge-card wide" data-key="tds">
+        <div class="gauge-label">NUTRIENT (TDS)</div>
+        <div class="gauge-wrap">
+          <svg viewBox="0 0 120 70" class="arc-svg">
+            <path class="arc-bg" d="M10,65 A55,55 0 0,1 110,65"/>
+            <path class="arc-fill" id="arc-tds" d="M10,65 A55,55 0 0,1 10,65" stroke="#ea80ff"/>
+          </svg>
+          <div class="gauge-value"><span id="val-tds">--</span><em>ppm</em></div>
+        </div>
+        <div class="gauge-range">0 — 1000 ppm</div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ANALYTICS PAGE -->
+  <section class="page" id="page-analytics">
+    <div class="page-header">
+      <h1 class="page-title">ANALYTICS</h1>
+      <div class="range-chips" id="rangeChips">
+        <button class="chip" data-range="600000">10M</button>
+        <button class="chip active" data-range="3600000">1H</button>
+        <button class="chip" data-range="21600000">6H</button>
+        <button class="chip" data-range="86400000">1D</button>
+        <button class="chip" data-range="259200000">3D</button>
+        <button class="chip" data-range="604800000">1W</button>
+      </div>
+    </div>
+    <div class="charts-list" id="chartsList">
+      <div class="chart-card"><canvas id="chart-air_temp"></canvas></div>
+      <div class="chart-card"><canvas id="chart-air_hum"></canvas></div>
+      <div class="chart-card"><canvas id="chart-water_level"></canvas></div>
+      <div class="chart-card"><canvas id="chart-light"></canvas></div>
+    </div>
+  </section>
+
+  <!-- CAMERA PAGE -->
+  <section class="page" id="page-camera">
+    <div class="page-header">
+      <h1 class="page-title">CAMERA HUB</h1>
+      <div id="camStatus" class="cam-status-badge">READY</div>
+    </div>
+
+    <div class="camera-layout">
+      <div class="camera-preview" id="cameraPreview">
+        <div class="no-image" id="noImageMsg">
+          <div class="no-image-icon">◎</div>
+          <div>No image captured yet</div>
+        </div>
+        <img id="capturedImage" style="display:none" alt="Plant capture" />
+        <div class="transfer-bar" id="transferBar" style="display:none">
+          <div class="transfer-fill" id="transferFill"></div>
+        </div>
+      </div>
+
+      <div class="camera-controls">
+        <button class="ctrl-btn primary" id="captureBtn">
+          <span class="btn-icon">◎</span> CAPTURE
+        </button>
+        <button class="ctrl-btn secondary" id="saveBtn" disabled>
+          <span class="btn-icon">↓</span> SAVE IMAGE
+        </button>
+        <div class="divider"></div>
+        <button class="ctrl-btn ai-btn" id="aiBtn" disabled>
+          <span class="btn-icon">◆</span> FAST AI ANALYSIS
+        </button>
+        <div id="aiResultBadge" class="ai-result-badge" style="display:none"></div>
+      </div>
+    </div>
+
+    <p class="cam-reminder">
+      ⓘ Fast AI Analysis sends the captured image to the Raspberry Pi for on-device TFLite inference.
+    </p>
+  </section>
+
+  <!-- AI PORTAL PAGE -->
+  <section class="page" id="page-ai">
+    <div class="page-header">
+      <h1 class="page-title">AI DIAGNOSIS PORTAL</h1>
+    </div>
+    <div class="ai-layout">
+      <div class="ai-form">
+        <label class="field-label">Plant Name / Type</label>
+        <input class="field-input" id="plantName" placeholder="e.g. Choy Sum" />
+
+        <label class="field-label">Growth Stage</label>
+        <select class="field-select" id="growthStage">
+          <option>Seedling</option>
+          <option>Vegetative</option>
+          <option>Flowering</option>
+          <option>Harvest Ready</option>
+        </select>
+
+        <label class="field-label">Observed Symptoms</label>
+        <textarea class="field-input" id="symptoms" rows="3" placeholder="e.g. Yellow leaves, wilting tips..."></textarea>
+
+        <button class="ctrl-btn primary wide" id="copyPromptBtn">
+          ⎘ Copy AI Prompt
+        </button>
+
+        <div class="portal-links">
+          <a class="portal-link gemini" href="https://gemini.google.com" target="_blank">Open Gemini ↗</a>
+          <a class="portal-link chatgpt" href="https://chatgpt.com" target="_blank">Open ChatGPT ↗</a>
+        </div>
+
+        <div class="ai-info">
+          ⓘ Copy the prompt, open an AI portal, upload your plant image, and paste the prompt for a full diagnosis.
+        </div>
+      </div>
+
+      <div class="sensor-snapshot">
+        <div class="snapshot-title">LIVE SENSOR SNAPSHOT</div>
+        <div class="snapshot-grid">
+          <div class="snap-item"><span class="snap-key">Air Temp</span><span class="snap-val" id="snap-air_temp">--</span></div>
+          <div class="snap-item"><span class="snap-key">Humidity</span><span class="snap-val" id="snap-air_hum">--</span></div>
+          <div class="snap-item"><span class="snap-key">Water Temp</span><span class="snap-val" id="snap-water_temp">--</span></div>
+          <div class="snap-item"><span class="snap-key">Water Level</span><span class="snap-val" id="snap-water_level">--</span></div>
+          <div class="snap-item"><span class="snap-key">Light</span><span class="snap-val" id="snap-light">--</span></div>
+          <div class="snap-item"><span class="snap-key">TDS</span><span class="snap-val" id="snap-tds">--</span></div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+</main>
+
+<!-- ── AI RESULT MODAL ─────────────────────── -->
+<div class="modal-overlay" id="aiModal" style="display:none">
+  <div class="modal">
+    <div class="modal-icon">◆</div>
+    <div class="modal-title">AI RESULT</div>
+    <div class="modal-sub">Probability Breakdown</div>
+    <div id="modalResults"></div>
+    <button class="modal-dismiss" id="modalDismiss">DISMISS</button>
+  </div>
+</div>
+
+<script src="app.js"></script>
+</body>
+</html>
