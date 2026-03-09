@@ -257,11 +257,11 @@
       </div>
       <div class="guide-body" id="guidebody-camera">
         <ol>
-          <li><strong>Click Capture</strong> — the ESP32-CAM takes a photo, uploads it to Firebase, and it appears here automatically.</li>
+          <li><strong>Click Capture</strong> — the ESP32-CAM takes a photo and sends it here over MQTT.</li>
           <li>Once the image appears, click <strong>Save Image</strong> to download it to your device.</li>
           <li>For a full diagnosis: go to <strong>AI Portal</strong>, copy the prompt, open Gemini or ChatGPT, upload your saved image, and paste the prompt.</li>
           <li>Browse up to 5 recent captures using the thumbnails below the main image.</li>
-          <li>Pull down to refresh the connection. If the camera is offline, check the ESP32-CAM is powered on.</li>
+          <li>If the camera is offline, check the ESP32-CAM is powered on.</li>
         </ol>
       </div>
     </div>
@@ -290,7 +290,7 @@
         <button class="ctrl-btn primary" id="captureBtn">
           <span class="btn-icon">◎</span> CAPTURE
         </button>
-        <p class="ctrl-hint">Sends command to ESP32-CAM → image uploads to Firebase</p>
+        <p class="ctrl-hint">Sends command to ESP32-CAM — image streams via MQTT</p>
 
         <button class="ctrl-btn secondary" id="saveBtn" disabled>
           <span class="btn-icon">↓</span> SAVE IMAGE
@@ -299,22 +299,12 @@
 
         <div class="divider"></div>
 
-        <p class="ctrl-hint" style="text-align:center">
-          Save the image and copy the AI result to use in your diagnosis prompt.
-        </p>
-
         <div id="aiResultBadge" class="ai-result-badge" style="display:none"></div>
 
         <div class="divider"></div>
         <p class="ctrl-hint" style="text-align:center">
           💡 For full diagnosis, go to <strong>AI Portal</strong> → copy prompt → upload saved image to Gemini or ChatGPT
         </p>
-
-        <!-- Debug log panel -->
-        <div id="debugPanel" class="debug-panel" style="display:none">
-          <div class="debug-title">DEBUG LOG</div>
-          <div id="debugLog"></div>
-        </div>
       </div>
     </div>
   </section>
