@@ -6,22 +6,18 @@
   <title>SEKKITO — Plant Intelligence Dashboard</title>
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700;900&family=Space+Mono:ital,wght@0,400;0,700;1,400&display=swap" rel="stylesheet" />
-  <!-- MQTT.js over WebSocket -->
   <script src="https://unpkg.com/mqtt@4.3.7/dist/mqtt.min.js"></script>
-  <!-- Firebase -->
   <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-database-compat.js"></script>
-  <!-- Chart.js -->
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-date-fns@3.0.0/dist/chartjs-adapter-date-fns.bundle.min.js"></script>
   <link rel="stylesheet" href="style.css" />
 </head>
 <body>
 
-<!-- ── SCANLINE OVERLAY ────────────────────── -->
 <div class="scanline"></div>
 
-<!-- ── SIDEBAR ────────────────────────────── -->
+<!-- SIDEBAR -->
 <aside class="sidebar" id="sidebar">
   <div class="logo">
     <span class="logo-icon">◈</span>
@@ -48,23 +44,80 @@
 
   <div class="mqtt-status-bar">
     <div class="status-dot" id="statusDot"></div>
-    <span id="statusText">CONNECTING</span>
+    <div>
+      <span id="statusText">CONNECTING</span>
+      <div class="status-hint" id="statusHint">Waiting for ESP32...</div>
+    </div>
   </div>
 </aside>
 
-<!-- ── HAMBURGER ──────────────────────────── -->
 <button class="hamburger" id="hamburger">☰</button>
 
-<!-- ── MAIN ───────────────────────────────── -->
+<!-- MAIN -->
 <main class="main">
 
-  <!-- DASHBOARD PAGE -->
+  <!-- ══ DASHBOARD ══════════════════════════════════════ -->
   <section class="page active" id="page-dashboard">
     <div class="page-header">
       <h1 class="page-title">LIVE SENSORS</h1>
       <div class="last-updated" id="lastUpdated">— last update: --:--:--</div>
     </div>
 
+    <!-- Guide card -->
+    <div class="guide-card" id="guide-dashboard">
+      <div class="guide-header" onclick="toggleGuide('dashboard')">
+        <span class="guide-icon">ⓘ</span>
+        <span class="guide-title">About this Dashboard — click to expand</span>
+        <span class="guide-chevron" id="chevron-dashboard">▸</span>
+      </div>
+      <div class="guide-body" id="guidebody-dashboard">
+        <ul>
+          <li>Sensor readings arrive every ~5 seconds from the ESP32 node over MQTT.</li>
+          <li>The <strong>Health Score</strong> shows how many sensors are within their ideal ranges. You can adjust thresholds in the mobile app Settings page.</li>
+          <li>Orange alert badges appear on gauge cards when a value goes outside its safe range.</li>
+          <li>The <strong>Grow Light</strong> card shows the automatic light controller status — no manual action is needed.</li>
+          <li>If status shows <strong>OFFLINE</strong>, check that your ESP32 is powered on and connected to Wi-Fi.</li>
+        </ul>
+      </div>
+    </div>
+
+    <!-- Health score + relay row -->
+    <div class="top-row">
+      <div class="health-card" id="healthCard">
+        <div class="health-ring-wrap">
+          <svg viewBox="0 0 100 100" class="health-ring-svg">
+            <circle cx="50" cy="50" r="40" class="ring-bg"/>
+            <circle cx="50" cy="50" r="40" class="ring-fill" id="ringFill"
+              stroke-dasharray="251.2" stroke-dashoffset="251.2"/>
+          </svg>
+          <div class="health-score" id="healthScore">--</div>
+        </div>
+        <div class="health-info">
+          <div class="health-label">PLANT HEALTH</div>
+          <div class="health-status" id="healthStatus">—</div>
+          <div class="health-sub">% sensors in ideal range</div>
+          <div class="health-hint">Adjust ranges in mobile app → Settings</div>
+        </div>
+      </div>
+
+      <div class="relay-card" id="relayCard">
+        <div class="relay-icon" id="relayIcon">💡</div>
+        <div class="relay-info">
+          <div class="relay-top">
+            <span class="relay-label">GROW LIGHT</span>
+            <span class="relay-badge" id="relayBadge">---</span>
+          </div>
+          <div class="relay-schedule" id="relaySchedule">Waiting for signal...</div>
+          <div class="relay-reason" id="relayReason"></div>
+          <div class="relay-hint">Controlled automatically by the light controller ESP32</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Alert banners -->
+    <div id="alertBanners"></div>
+
+    <!-- Gauges -->
     <div class="gauge-grid">
       <div class="gauge-card" data-key="air_temp">
         <div class="gauge-label">AIR TEMP</div>
@@ -76,6 +129,7 @@
           <div class="gauge-value"><span id="val-air_temp">--</span><em>°C</em></div>
         </div>
         <div class="gauge-range">0 — 50°C</div>
+        <div class="gauge-alert" id="alert-air_temp" style="display:none">⚠ OUT OF RANGE</div>
       </div>
 
       <div class="gauge-card" data-key="air_hum">
@@ -88,6 +142,7 @@
           <div class="gauge-value"><span id="val-air_hum">--</span><em>%</em></div>
         </div>
         <div class="gauge-range">0 — 100%</div>
+        <div class="gauge-alert" id="alert-air_hum" style="display:none">⚠ OUT OF RANGE</div>
       </div>
 
       <div class="gauge-card" data-key="water_level">
@@ -100,6 +155,7 @@
           <div class="gauge-value"><span id="val-water_level">--</span><em>%</em></div>
         </div>
         <div class="gauge-range">0 — 100%</div>
+        <div class="gauge-alert" id="alert-water_level" style="display:none">⚠ LOW</div>
       </div>
 
       <div class="gauge-card" data-key="light">
@@ -112,6 +168,7 @@
           <div class="gauge-value"><span id="val-light">--</span><em>%</em></div>
         </div>
         <div class="gauge-range">0 — 100%</div>
+        <div class="gauge-alert" id="alert-light" style="display:none">⚠ OUT OF RANGE</div>
       </div>
 
       <div class="gauge-card wide" data-key="water_temp">
@@ -124,6 +181,7 @@
           <div class="gauge-value"><span id="val-water_temp">--</span><em>°C</em></div>
         </div>
         <div class="gauge-range">0 — 50°C</div>
+        <div class="gauge-alert" id="alert-water_temp" style="display:none">⚠ OUT OF RANGE</div>
       </div>
 
       <div class="gauge-card wide" data-key="tds">
@@ -136,11 +194,12 @@
           <div class="gauge-value"><span id="val-tds">--</span><em>ppm</em></div>
         </div>
         <div class="gauge-range">0 — 1000 ppm</div>
+        <div class="gauge-alert" id="alert-tds" style="display:none">⚠ OUT OF RANGE</div>
       </div>
     </div>
   </section>
 
-  <!-- ANALYTICS PAGE -->
+  <!-- ══ ANALYTICS ══════════════════════════════════════ -->
   <section class="page" id="page-analytics">
     <div class="page-header">
       <h1 class="page-title">ANALYTICS</h1>
@@ -153,26 +212,62 @@
         <button class="chip" data-range="604800000">1W</button>
       </div>
     </div>
+
+    <div class="guide-card" id="guide-analytics">
+      <div class="guide-header" onclick="toggleGuide('analytics')">
+        <span class="guide-icon">ⓘ</span>
+        <span class="guide-title">About Analytics — click to expand</span>
+        <span class="guide-chevron" id="chevron-analytics">▸</span>
+      </div>
+      <div class="guide-body" id="guidebody-analytics">
+        <ul>
+          <li>Charts show historical sensor data stored in Firebase Realtime Database.</li>
+          <li>Select a time range above — data is loaded fresh each time you switch.</li>
+          <li>Data is written by the ESP32 sensor node every ~40 seconds to Firebase.</li>
+          <li>If charts are empty, the sensor node may not have written data in that period yet.</li>
+          <li>Water Temperature is stored as <code>water_temperature</code> in Firebase and is shown in a separate chart.</li>
+        </ul>
+      </div>
+    </div>
+
     <div class="charts-list" id="chartsList">
       <div class="chart-card"><canvas id="chart-air_temp"></canvas></div>
       <div class="chart-card"><canvas id="chart-air_hum"></canvas></div>
       <div class="chart-card"><canvas id="chart-water_level"></canvas></div>
       <div class="chart-card"><canvas id="chart-light"></canvas></div>
+      <div class="chart-card"><canvas id="chart-water_temp"></canvas></div>
     </div>
   </section>
 
-  <!-- CAMERA PAGE -->
+  <!-- ══ CAMERA ══════════════════════════════════════════ -->
   <section class="page" id="page-camera">
     <div class="page-header">
       <h1 class="page-title">CAMERA HUB</h1>
       <div id="camStatus" class="cam-status-badge">READY</div>
     </div>
 
+    <div class="guide-card" id="guide-camera">
+      <div class="guide-header" onclick="toggleGuide('camera')">
+        <span class="guide-icon">ⓘ</span>
+        <span class="guide-title">How to use Camera Hub — click to expand</span>
+        <span class="guide-chevron" id="chevron-camera">▸</span>
+      </div>
+      <div class="guide-body" id="guidebody-camera">
+        <ol>
+          <li><strong>Click Capture</strong> — the ESP32-CAM takes a photo and sends it here over MQTT.</li>
+          <li>Once the image appears, click <strong>Save Image</strong> to download it to your device.</li>
+          <li>Click <strong>Fast AI Analysis</strong> to run a quick TFLite classification on the Raspberry Pi — no internet needed.</li>
+          <li>For a full diagnosis with treatment advice: go to <strong>AI Portal</strong>, copy the prompt, open Gemini or ChatGPT, upload your saved image, and paste the prompt.</li>
+          <li>If the camera is offline, the status badge will say "Connection failed" — check the ESP32-CAM is powered on.</li>
+        </ol>
+      </div>
+    </div>
+
     <div class="camera-layout">
       <div class="camera-preview" id="cameraPreview">
         <div class="no-image" id="noImageMsg">
           <div class="no-image-icon">◎</div>
-          <div>No image captured yet</div>
+          <div>No image yet — click Capture below</div>
         </div>
         <img id="capturedImage" style="display:none" alt="Plant capture" />
         <div class="transfer-bar" id="transferBar" style="display:none">
@@ -184,31 +279,59 @@
         <button class="ctrl-btn primary" id="captureBtn">
           <span class="btn-icon">◎</span> CAPTURE
         </button>
+        <p class="ctrl-hint">Sends command to ESP32-CAM to take a photo</p>
+
         <button class="ctrl-btn secondary" id="saveBtn" disabled>
           <span class="btn-icon">↓</span> SAVE IMAGE
         </button>
+        <p class="ctrl-hint">Downloads the image to your device</p>
+
         <div class="divider"></div>
+
         <button class="ctrl-btn ai-btn" id="aiBtn" disabled>
           <span class="btn-icon">◆</span> FAST AI ANALYSIS
         </button>
+        <p class="ctrl-hint">Runs TFLite on the Pi — no internet needed</p>
+
         <div id="aiResultBadge" class="ai-result-badge" style="display:none"></div>
+
+        <div class="divider"></div>
+        <p class="ctrl-hint" style="text-align:center">
+          💡 For full diagnosis, go to <strong>AI Portal</strong> → copy prompt → upload saved image to Gemini or ChatGPT
+        </p>
       </div>
     </div>
-
-    <p class="cam-reminder">
-      ⓘ Fast AI Analysis sends the captured image to the Raspberry Pi for on-device TFLite inference.
-    </p>
   </section>
 
-  <!-- AI PORTAL PAGE -->
+  <!-- ══ AI PORTAL ═══════════════════════════════════════ -->
   <section class="page" id="page-ai">
     <div class="page-header">
       <h1 class="page-title">AI DIAGNOSIS PORTAL</h1>
     </div>
+
+    <div class="guide-card" id="guide-ai">
+      <div class="guide-header" onclick="toggleGuide('ai')">
+        <span class="guide-icon">ⓘ</span>
+        <span class="guide-title">How to get a full AI diagnosis — click to expand</span>
+        <span class="guide-chevron" id="chevron-ai">▸</span>
+      </div>
+      <div class="guide-body" id="guidebody-ai">
+        <ol>
+          <li>Go to <strong>Camera Hub</strong>, capture a clear photo of your plant, then click Save Image.</li>
+          <li>Fill in the plant name, growth stage, and any visible symptoms below.</li>
+          <li>Click <strong>Copy AI Prompt</strong> — it includes all live sensor readings automatically.</li>
+          <li>Click <strong>Open Gemini</strong> or <strong>Open ChatGPT</strong> to launch the AI chat.</li>
+          <li>In the AI chat: upload your saved plant photo, then paste the copied prompt.</li>
+          <li>The AI will return a diagnosis, treatment steps, and prevention tips.</li>
+        </ol>
+        <p style="margin-top:8px;color:var(--teal)">💡 Tip: Gemini is recommended — it handles plant images very well.</p>
+      </div>
+    </div>
+
     <div class="ai-layout">
       <div class="ai-form">
         <label class="field-label">Plant Name / Type</label>
-        <input class="field-input" id="plantName" placeholder="e.g. Choy Sum" />
+        <input class="field-input" id="plantName" placeholder="e.g. Choy Sum, Kangkung, Basil" />
 
         <label class="field-label">Growth Stage</label>
         <select class="field-select" id="growthStage">
@@ -218,46 +341,56 @@
           <option>Harvest Ready</option>
         </select>
 
-        <label class="field-label">Observed Symptoms</label>
-        <textarea class="field-input" id="symptoms" rows="3" placeholder="e.g. Yellow leaves, wilting tips..."></textarea>
+        <label class="field-label">Observed Symptoms (optional)</label>
+        <textarea class="field-input" id="symptoms" rows="3"
+          placeholder="e.g. Yellow leaves, wilting tips, brown spots on edges, slow growth..."></textarea>
 
-        <button class="ctrl-btn primary wide" id="copyPromptBtn">
+        <button class="ctrl-btn primary wide" id="copyPromptBtn" style="margin-top:20px">
           ⎘ Copy AI Prompt
         </button>
+        <p class="ctrl-hint" style="text-align:center;margin-top:6px">
+          Sensor data is included automatically from the live snapshot on the right
+        </p>
 
         <div class="portal-links">
-          <a class="portal-link gemini" href="https://gemini.google.com" target="_blank">Open Gemini ↗</a>
-          <a class="portal-link chatgpt" href="https://chatgpt.com" target="_blank">Open ChatGPT ↗</a>
-        </div>
-
-        <div class="ai-info">
-          ⓘ Copy the prompt, open an AI portal, upload your plant image, and paste the prompt for a full diagnosis.
+          <a class="portal-link gemini" href="https://gemini.google.com" target="_blank">
+            Open Gemini ↗
+            <span class="portal-sub">Recommended for images</span>
+          </a>
+          <a class="portal-link chatgpt" href="https://chatgpt.com" target="_blank">
+            Open ChatGPT ↗
+            <span class="portal-sub">Also works well</span>
+          </a>
         </div>
       </div>
 
       <div class="sensor-snapshot">
         <div class="snapshot-title">LIVE SENSOR SNAPSHOT</div>
+        <div class="snapshot-hint">These values will be included in the prompt</div>
         <div class="snapshot-grid">
-          <div class="snap-item"><span class="snap-key">Air Temp</span><span class="snap-val" id="snap-air_temp">--</span></div>
-          <div class="snap-item"><span class="snap-key">Humidity</span><span class="snap-val" id="snap-air_hum">--</span></div>
-          <div class="snap-item"><span class="snap-key">Water Temp</span><span class="snap-val" id="snap-water_temp">--</span></div>
-          <div class="snap-item"><span class="snap-key">Water Level</span><span class="snap-val" id="snap-water_level">--</span></div>
-          <div class="snap-item"><span class="snap-key">Light</span><span class="snap-val" id="snap-light">--</span></div>
-          <div class="snap-item"><span class="snap-key">TDS</span><span class="snap-val" id="snap-tds">--</span></div>
+          <div class="snap-item"><span class="snap-key">🌡 Air Temp</span><span class="snap-val" id="snap-air_temp">--</span></div>
+          <div class="snap-item"><span class="snap-key">💧 Humidity</span><span class="snap-val" id="snap-air_hum">--</span></div>
+          <div class="snap-item"><span class="snap-key">🌊 Water Temp</span><span class="snap-val" id="snap-water_temp">--</span></div>
+          <div class="snap-item"><span class="snap-key">🪣 Water Level</span><span class="snap-val" id="snap-water_level">--</span></div>
+          <div class="snap-item"><span class="snap-key">💡 Light</span><span class="snap-val" id="snap-light">--</span></div>
+          <div class="snap-item"><span class="snap-key">⚗️ TDS</span><span class="snap-val" id="snap-tds">--</span></div>
+          <div class="snap-item"><span class="snap-key">🔆 Grow Light</span><span class="snap-val" id="snap-relay">--</span></div>
         </div>
+        <div class="snapshot-footer">Check the Dashboard first to confirm readings are live</div>
       </div>
     </div>
   </section>
 
 </main>
 
-<!-- ── AI RESULT MODAL ─────────────────────── -->
+<!-- AI RESULT MODAL -->
 <div class="modal-overlay" id="aiModal" style="display:none">
   <div class="modal">
     <div class="modal-icon">◆</div>
     <div class="modal-title">AI RESULT</div>
-    <div class="modal-sub">Probability Breakdown</div>
+    <div class="modal-sub">TFLite model — top 3 predictions</div>
     <div id="modalResults"></div>
+    <p class="modal-footer-hint">For detailed diagnosis & treatment advice, go to AI Portal → copy prompt → open Gemini or ChatGPT with your saved image.</p>
     <button class="modal-dismiss" id="modalDismiss">DISMISS</button>
   </div>
 </div>
