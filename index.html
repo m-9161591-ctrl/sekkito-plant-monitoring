@@ -40,6 +40,12 @@
     <button class="nav-btn" data-page="ai">
       <span class="nav-icon">◆</span> AI Portal
     </button>
+    <button class="nav-btn" data-page="log">
+      <span class="nav-icon">☰</span> Plant Log
+    </button>
+    <button class="nav-btn" data-page="settings">
+      <span class="nav-icon">⚙</span> Settings
+    </button>
   </nav>
 
   <div class="mqtt-status-bar">
@@ -254,32 +260,37 @@
       </div>
       <div class="guide-body" id="guidebody-camera">
         <ol>
-          <li><strong>Click Capture</strong> — the ESP32-CAM takes a photo and sends it here over MQTT.</li>
+          <li><strong>Click Capture</strong> — the ESP32-CAM takes a photo, uploads it to Firebase, and it appears here automatically.</li>
           <li>Once the image appears, click <strong>Save Image</strong> to download it to your device.</li>
           <li>Click <strong>Fast AI Analysis</strong> to run a quick TFLite classification on the Raspberry Pi — no internet needed.</li>
           <li>For a full diagnosis with treatment advice: go to <strong>AI Portal</strong>, copy the prompt, open Gemini or ChatGPT, upload your saved image, and paste the prompt.</li>
-          <li>If the camera is offline, the status badge will say "Connection failed" — check the ESP32-CAM is powered on.</li>
+          <li>Browse up to 5 recent captures using the thumbnails below the main image.</li>
         </ol>
       </div>
     </div>
 
     <div class="camera-layout">
-      <div class="camera-preview" id="cameraPreview">
-        <div class="no-image" id="noImageMsg">
-          <div class="no-image-icon">◎</div>
-          <div>No image yet — click Capture below</div>
+      <div>
+        <div class="camera-preview" id="cameraPreview">
+          <div class="no-image" id="noImageMsg">
+            <div class="no-image-icon">◎</div>
+            <div>No image yet — click Capture below</div>
+          </div>
+          <img id="capturedImage" style="display:none" alt="Plant capture" />
+          <div class="history-badge" id="historyBadge" style="display:none">HISTORY</div>
+          <div class="transfer-bar" id="transferBar" style="display:none">
+            <div class="transfer-fill" id="transferFill"></div>
+          </div>
         </div>
-        <img id="capturedImage" style="display:none" alt="Plant capture" />
-        <div class="transfer-bar" id="transferBar" style="display:none">
-          <div class="transfer-fill" id="transferFill"></div>
-        </div>
+        <!-- Image history thumbnails -->
+        <div class="img-history" id="imgHistory"></div>
       </div>
 
       <div class="camera-controls">
         <button class="ctrl-btn primary" id="captureBtn">
           <span class="btn-icon">◎</span> CAPTURE
         </button>
-        <p class="ctrl-hint">Sends command to ESP32-CAM to take a photo</p>
+        <p class="ctrl-hint">Sends command to ESP32-CAM → image uploads to Firebase</p>
 
         <button class="ctrl-btn secondary" id="saveBtn" disabled>
           <span class="btn-icon">↓</span> SAVE IMAGE
@@ -299,6 +310,12 @@
         <p class="ctrl-hint" style="text-align:center">
           💡 For full diagnosis, go to <strong>AI Portal</strong> → copy prompt → upload saved image to Gemini or ChatGPT
         </p>
+
+        <!-- Debug log panel -->
+        <div id="debugPanel" class="debug-panel" style="display:none">
+          <div class="debug-title">DEBUG LOG</div>
+          <div id="debugLog"></div>
+        </div>
       </div>
     </div>
   </section>
@@ -377,6 +394,138 @@
           <div class="snap-item"><span class="snap-key">🔆 Grow Light</span><span class="snap-val" id="snap-relay">--</span></div>
         </div>
         <div class="snapshot-footer">Check the Dashboard first to confirm readings are live</div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ══ PLANT LOG ════════════════════════════════════════ -->
+  <section class="page" id="page-log">
+    <div class="page-header">
+      <h1 class="page-title">PLANT LOG</h1>
+    </div>
+
+    <div class="guide-card" id="guide-log">
+      <div class="guide-header" onclick="toggleGuide('log')">
+        <span class="guide-icon">ⓘ</span>
+        <span class="guide-title">About Plant Log — click to expand</span>
+        <span class="guide-chevron" id="chevron-log">▸</span>
+      </div>
+      <div class="guide-body" id="guidebody-log">
+        <ul>
+          <li>Jot down growth milestones, treatment notes, or observations about your plant.</li>
+          <li>Entries are saved locally in your browser — they persist between visits.</li>
+          <li>The sensor snapshot at the top reflects current live readings at the time you write your note.</li>
+          <li>Click <strong>Delete</strong> on any entry to remove it.</li>
+        </ul>
+      </div>
+    </div>
+
+    <!-- Sensor snapshot strip -->
+    <div class="log-snapshot" id="logSnapshot">
+      <div class="log-snap-item"><span>🌡</span><span id="logsnap-air_temp">--</span></div>
+      <div class="log-snap-item"><span>💧</span><span id="logsnap-air_hum">--</span></div>
+      <div class="log-snap-item"><span>🪣</span><span id="logsnap-water_level">--</span></div>
+      <div class="log-snap-item"><span>💡</span><span id="logsnap-light">--</span></div>
+      <div class="log-snap-item"><span>🌊</span><span id="logsnap-water_temp">--</span></div>
+    </div>
+
+    <!-- Add note -->
+    <div class="log-input-row">
+      <input class="field-input" id="logNoteInput" placeholder="Add an observation note..." />
+      <button class="ctrl-btn primary" id="logAddBtn">+ ADD</button>
+    </div>
+
+    <!-- Entries list -->
+    <div id="logEntries" class="log-entries">
+      <div class="log-empty">No entries yet — add your first observation above</div>
+    </div>
+  </section>
+
+  <!-- ══ SETTINGS ══════════════════════════════════════════ -->
+  <section class="page" id="page-settings">
+    <div class="page-header">
+      <h1 class="page-title">SETTINGS</h1>
+    </div>
+
+    <div class="settings-section-title">APPEARANCE</div>
+    <div class="settings-card">
+      <div class="settings-row">
+        <div class="settings-row-info">
+          <div class="settings-row-label">Theme</div>
+          <div class="settings-row-sub" id="themeLabel">Dark</div>
+        </div>
+        <label class="toggle-switch">
+          <input type="checkbox" id="themeToggle" checked />
+          <span class="toggle-slider"></span>
+        </label>
+      </div>
+      <div class="settings-divider"></div>
+      <div class="settings-row">
+        <div class="settings-row-info">
+          <div class="settings-row-label">Show Info Banners</div>
+          <div class="settings-row-sub">Display helpful tips on each page</div>
+        </div>
+        <label class="toggle-switch">
+          <input type="checkbox" id="guidesToggle" checked />
+          <span class="toggle-slider"></span>
+        </label>
+      </div>
+    </div>
+
+    <div class="settings-section-title" style="margin-top:28px">ALERT THRESHOLDS</div>
+    <p class="settings-hint">Alerts appear on dashboard when values fall outside these ranges.</p>
+
+    <div class="settings-card" style="margin-top:12px">
+      <div class="thr-row">
+        <span class="thr-label">Air Temp (°C)</span>
+        <div class="thr-inputs">
+          <input class="thr-input" id="thr-air_temp-min" type="number" placeholder="Min" value="18" />
+          <input class="thr-input" id="thr-air_temp-max" type="number" placeholder="Max" value="35" />
+        </div>
+      </div>
+      <div class="settings-divider"></div>
+      <div class="thr-row">
+        <span class="thr-label">Humidity (%)</span>
+        <div class="thr-inputs">
+          <input class="thr-input" id="thr-air_hum-min" type="number" placeholder="Min" value="40" />
+          <input class="thr-input" id="thr-air_hum-max" type="number" placeholder="Max" value="90" />
+        </div>
+      </div>
+      <div class="settings-divider"></div>
+      <div class="thr-row">
+        <span class="thr-label">Water Level (%)</span>
+        <div class="thr-inputs">
+          <input class="thr-input" id="thr-water_level-min" type="number" placeholder="Min" value="20" />
+          <input class="thr-input" id="thr-water_level-max" type="number" placeholder="Max" value="100" />
+        </div>
+      </div>
+      <div class="settings-divider"></div>
+      <div class="thr-row">
+        <span class="thr-label">Light (%)</span>
+        <div class="thr-inputs">
+          <input class="thr-input" id="thr-light-min" type="number" placeholder="Min" value="10" />
+          <input class="thr-input" id="thr-light-max" type="number" placeholder="Max" value="100" />
+        </div>
+      </div>
+      <div class="settings-divider"></div>
+      <div class="thr-row">
+        <span class="thr-label">Water Temp (°C)</span>
+        <div class="thr-inputs">
+          <input class="thr-input" id="thr-water_temp-min" type="number" placeholder="Min" value="15" />
+          <input class="thr-input" id="thr-water_temp-max" type="number" placeholder="Max" value="30" />
+        </div>
+      </div>
+    </div>
+    <button class="ctrl-btn primary wide" id="saveThrBtn" style="margin-top:16px">Save Thresholds</button>
+    <div id="thrSaveMsg" style="display:none;text-align:center;margin-top:10px;color:var(--green);font-size:11px;font-family:var(--font-hud)">✅ Thresholds saved</div>
+
+    <div class="settings-section-title" style="margin-top:28px">ABOUT</div>
+    <div class="settings-card">
+      <div class="settings-row-label" style="font-size:13px;color:var(--text)">SEKKITO Plant Monitor</div>
+      <div class="settings-row-sub" style="margin-top:6px;line-height:1.7">
+        ESP32 + ESP32-CAM<br>
+        HiveMQ MQTT · Firebase RTDB<br>
+        Web Dashboard + Flutter App with Gemini/ChatGPT integration
       </div>
     </div>
   </section>
