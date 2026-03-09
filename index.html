@@ -17,7 +17,7 @@
 
 <div class="scanline"></div>
 
-<!-- SIDEBAR -->
+<!-- ══ SIDEBAR ══════════════════════════════════════════ -->
 <aside class="sidebar" id="sidebar">
   <div class="logo">
     <span class="logo-icon">◈</span>
@@ -28,24 +28,12 @@
   </div>
 
   <nav class="nav">
-    <button class="nav-btn active" data-page="dashboard">
-      <span class="nav-icon">◉</span> Dashboard
-    </button>
-    <button class="nav-btn" data-page="analytics">
-      <span class="nav-icon">◈</span> Analytics
-    </button>
-    <button class="nav-btn" data-page="camera">
-      <span class="nav-icon">◎</span> Camera Hub
-    </button>
-    <button class="nav-btn" data-page="ai">
-      <span class="nav-icon">◆</span> AI Portal
-    </button>
-    <button class="nav-btn" data-page="log">
-      <span class="nav-icon">☰</span> Plant Log
-    </button>
-    <button class="nav-btn" data-page="settings">
-      <span class="nav-icon">⚙</span> Settings
-    </button>
+    <button class="nav-btn active" data-page="dashboard"><span class="nav-icon">◉</span> Dashboard</button>
+    <button class="nav-btn" data-page="analytics"><span class="nav-icon">◈</span> Analytics</button>
+    <button class="nav-btn" data-page="camera"><span class="nav-icon">◎</span> Camera Hub</button>
+    <button class="nav-btn" data-page="ai"><span class="nav-icon">◆</span> AI Portal</button>
+    <button class="nav-btn" data-page="log"><span class="nav-icon">☰</span> Plant Log</button>
+    <button class="nav-btn" data-page="settings"><span class="nav-icon">⚙</span> Settings</button>
   </nav>
 
   <div class="mqtt-status-bar">
@@ -59,17 +47,18 @@
 
 <button class="hamburger" id="hamburger">☰</button>
 
-<!-- MAIN -->
+<!-- ══ MAIN ══════════════════════════════════════════════ -->
 <main class="main">
 
-  <!-- ══ DASHBOARD ══════════════════════════════════════ -->
+  <!-- ════════════════════════════════════════════════════
+       1. DASHBOARD
+       ════════════════════════════════════════════════════ -->
   <section class="page active" id="page-dashboard">
     <div class="page-header">
       <h1 class="page-title">LIVE SENSORS</h1>
       <div class="last-updated" id="lastUpdated">— last update: --:--:--</div>
     </div>
 
-    <!-- Guide card -->
     <div class="guide-card" id="guide-dashboard">
       <div class="guide-header" onclick="toggleGuide('dashboard')">
         <span class="guide-icon">ⓘ</span>
@@ -79,15 +68,15 @@
       <div class="guide-body" id="guidebody-dashboard">
         <ul>
           <li>Sensor readings arrive every ~5 seconds from the ESP32 node over MQTT.</li>
-          <li>The <strong>Health Score</strong> shows how many sensors are within their ideal ranges. You can adjust thresholds in the mobile app Settings page.</li>
+          <li>The <strong>Health Score</strong> shows how many sensors are within their ideal ranges. Adjust thresholds in Settings.</li>
           <li>Orange alert badges appear on gauge cards when a value goes outside its safe range.</li>
-          <li>The <strong>Grow Light</strong> card shows the automatic light controller status — no manual action is needed.</li>
+          <li>The <strong>Grow Light</strong> card shows the automatic light controller status — no manual action needed.</li>
           <li>If status shows <strong>OFFLINE</strong>, check that your ESP32 is powered on and connected to Wi-Fi.</li>
         </ul>
       </div>
     </div>
 
-    <!-- Health score + relay row -->
+    <!-- Health + Relay row -->
     <div class="top-row">
       <div class="health-card" id="healthCard">
         <div class="health-ring-wrap">
@@ -101,8 +90,8 @@
         <div class="health-info">
           <div class="health-label">PLANT HEALTH</div>
           <div class="health-status" id="healthStatus">—</div>
-          <div class="health-sub">% sensors in ideal range</div>
-          <div class="health-hint">Adjust ranges in mobile app → Settings</div>
+          <div class="health-sub">% parameters in range</div>
+          <div class="health-hint">Adjust ranges in Settings</div>
         </div>
       </div>
 
@@ -151,6 +140,19 @@
         <div class="gauge-alert" id="alert-air_hum" style="display:none">⚠ OUT OF RANGE</div>
       </div>
 
+      <div class="gauge-card" data-key="water_temp">
+        <div class="gauge-label">WATER TEMP</div>
+        <div class="gauge-wrap">
+          <svg viewBox="0 0 120 70" class="arc-svg">
+            <path class="arc-bg" d="M10,65 A55,55 0 0,1 110,65"/>
+            <path class="arc-fill" id="arc-water_temp" d="M10,65 A55,55 0 0,1 10,65" stroke="#69f0ae"/>
+          </svg>
+          <div class="gauge-value"><span id="val-water_temp">--</span><em>°C</em></div>
+        </div>
+        <div class="gauge-range">0 — 50°C</div>
+        <div class="gauge-alert" id="alert-water_temp" style="display:none">⚠ OUT OF RANGE</div>
+      </div>
+
       <div class="gauge-card" data-key="water_level">
         <div class="gauge-label">WATER LEVEL</div>
         <div class="gauge-wrap">
@@ -177,20 +179,7 @@
         <div class="gauge-alert" id="alert-light" style="display:none">⚠ OUT OF RANGE</div>
       </div>
 
-      <div class="gauge-card wide" data-key="water_temp">
-        <div class="gauge-label">WATER TEMP</div>
-        <div class="gauge-wrap">
-          <svg viewBox="0 0 120 70" class="arc-svg">
-            <path class="arc-bg" d="M10,65 A55,55 0 0,1 110,65"/>
-            <path class="arc-fill" id="arc-water_temp" d="M10,65 A55,55 0 0,1 10,65" stroke="#69f0ae"/>
-          </svg>
-          <div class="gauge-value"><span id="val-water_temp">--</span><em>°C</em></div>
-        </div>
-        <div class="gauge-range">0 — 50°C</div>
-        <div class="gauge-alert" id="alert-water_temp" style="display:none">⚠ OUT OF RANGE</div>
-      </div>
-
-      <div class="gauge-card wide" data-key="tds">
+      <div class="gauge-card" data-key="tds">
         <div class="gauge-label">NUTRIENT (TDS)</div>
         <div class="gauge-wrap">
           <svg viewBox="0 0 120 70" class="arc-svg">
@@ -203,9 +192,16 @@
         <div class="gauge-alert" id="alert-tds" style="display:none">⚠ OUT OF RANGE</div>
       </div>
     </div>
+
+    <!-- Grow light reminder note -->
+    <p class="dashboard-note">
+      The automatic light operates during 8:00 AM – 12:00 PM. During midnight the light is forced off to prevent overstressing the plant. The light will be forced ON if connection to the MQTT broker is lost or sensor readings are not received for a certain period. This is a safety measure to ensure the plant continues to receive light even if there are connectivity issues.
+    </p>
   </section>
 
-  <!-- ══ ANALYTICS ══════════════════════════════════════ -->
+  <!-- ════════════════════════════════════════════════════
+       2. ANALYTICS
+       ════════════════════════════════════════════════════ -->
   <section class="page" id="page-analytics">
     <div class="page-header">
       <h1 class="page-title">ANALYTICS</h1>
@@ -231,12 +227,11 @@
           <li>Select a time range above — data is loaded fresh each time you switch.</li>
           <li>Data is written by the ESP32 sensor node every ~40 seconds to Firebase.</li>
           <li>If charts are empty, the sensor node may not have written data in that period yet.</li>
-          <li>Water Temperature is stored as <code>water_temperature</code> in Firebase and is shown in a separate chart.</li>
         </ul>
       </div>
     </div>
 
-    <div class="charts-list" id="chartsList">
+    <div class="charts-list">
       <div class="chart-card"><canvas id="chart-air_temp"></canvas></div>
       <div class="chart-card"><canvas id="chart-air_hum"></canvas></div>
       <div class="chart-card"><canvas id="chart-water_level"></canvas></div>
@@ -245,7 +240,9 @@
     </div>
   </section>
 
-  <!-- ══ CAMERA ══════════════════════════════════════════ -->
+  <!-- ════════════════════════════════════════════════════
+       3. CAMERA HUB
+       ════════════════════════════════════════════════════ -->
   <section class="page" id="page-camera">
     <div class="page-header">
       <h1 class="page-title">CAMERA HUB</h1>
@@ -262,30 +259,33 @@
         <ol>
           <li><strong>Click Capture</strong> — the ESP32-CAM takes a photo, uploads it to Firebase, and it appears here automatically.</li>
           <li>Once the image appears, click <strong>Save Image</strong> to download it to your device.</li>
-          <li>Click <strong>Fast AI Analysis</strong> to run a quick TFLite classification on the Raspberry Pi — no internet needed.</li>
-          <li>For a full diagnosis with treatment advice: go to <strong>AI Portal</strong>, copy the prompt, open Gemini or ChatGPT, upload your saved image, and paste the prompt.</li>
+          <li>For a full diagnosis: go to <strong>AI Portal</strong>, copy the prompt, open Gemini or ChatGPT, upload your saved image, and paste the prompt.</li>
           <li>Browse up to 5 recent captures using the thumbnails below the main image.</li>
+          <li>Pull down to refresh the connection. If the camera is offline, check the ESP32-CAM is powered on.</li>
         </ol>
       </div>
     </div>
 
     <div class="camera-layout">
-      <div>
+      <!-- Left: image + thumbnails -->
+      <div class="camera-left">
         <div class="camera-preview" id="cameraPreview">
           <div class="no-image" id="noImageMsg">
             <div class="no-image-icon">◎</div>
             <div>No image yet — click Capture below</div>
+            <div class="no-image-sub">Pull down to reconnect</div>
           </div>
           <img id="capturedImage" style="display:none" alt="Plant capture" />
-          <div class="history-badge" id="historyBadge" style="display:none">HISTORY</div>
+          <div class="history-badge" id="historyBadge" style="display:none"></div>
           <div class="transfer-bar" id="transferBar" style="display:none">
             <div class="transfer-fill" id="transferFill"></div>
           </div>
         </div>
-        <!-- Image history thumbnails -->
+        <!-- History thumbnails (shown when >1 image) -->
         <div class="img-history" id="imgHistory"></div>
       </div>
 
+      <!-- Right: controls -->
       <div class="camera-controls">
         <button class="ctrl-btn primary" id="captureBtn">
           <span class="btn-icon">◎</span> CAPTURE
@@ -299,10 +299,9 @@
 
         <div class="divider"></div>
 
-        <button class="ctrl-btn ai-btn" id="aiBtn" disabled>
-          <span class="btn-icon">◆</span> FAST AI ANALYSIS
-        </button>
-        <p class="ctrl-hint">Runs TFLite on the Pi — no internet needed</p>
+        <p class="ctrl-hint" style="text-align:center">
+          Save the image and copy the AI result to use in your diagnosis prompt.
+        </p>
 
         <div id="aiResultBadge" class="ai-result-badge" style="display:none"></div>
 
@@ -320,7 +319,9 @@
     </div>
   </section>
 
-  <!-- ══ AI PORTAL ═══════════════════════════════════════ -->
+  <!-- ════════════════════════════════════════════════════
+       4. AI PORTAL
+       ════════════════════════════════════════════════════ -->
   <section class="page" id="page-ai">
     <div class="page-header">
       <h1 class="page-title">AI DIAGNOSIS PORTAL</h1>
@@ -398,7 +399,9 @@
     </div>
   </section>
 
-  <!-- ══ PLANT LOG ════════════════════════════════════════ -->
+  <!-- ════════════════════════════════════════════════════
+       5. PLANT LOG
+       ════════════════════════════════════════════════════ -->
   <section class="page" id="page-log">
     <div class="page-header">
       <h1 class="page-title">PLANT LOG</h1>
@@ -413,44 +416,48 @@
       <div class="guide-body" id="guidebody-log">
         <ul>
           <li>Jot down growth milestones, treatment notes, or observations about your plant.</li>
-          <li>Entries are saved locally in your browser — they persist between visits.</li>
-          <li>The sensor snapshot at the top reflects current live readings at the time you write your note.</li>
-          <li>Click <strong>Delete</strong> on any entry to remove it.</li>
+          <li>Entries are saved locally in your browser and persist between visits.</li>
+          <li>The sensor snapshot at the top reflects current live readings.</li>
+          <li>Click <strong>✕</strong> on any entry to remove it.</li>
         </ul>
       </div>
     </div>
 
     <!-- Sensor snapshot strip -->
-    <div class="log-snapshot" id="logSnapshot">
-      <div class="log-snap-item"><span>🌡</span><span id="logsnap-air_temp">--</span></div>
-      <div class="log-snap-item"><span>💧</span><span id="logsnap-air_hum">--</span></div>
-      <div class="log-snap-item"><span>🪣</span><span id="logsnap-water_level">--</span></div>
-      <div class="log-snap-item"><span>💡</span><span id="logsnap-light">--</span></div>
-      <div class="log-snap-item"><span>🌊</span><span id="logsnap-water_temp">--</span></div>
+    <div class="log-snapshot">
+      <div class="log-snap-item"><span class="log-snap-icon">🌡</span><span id="logsnap-air_temp" class="log-snap-val">--</span></div>
+      <div class="log-snap-item"><span class="log-snap-icon">💧</span><span id="logsnap-air_hum" class="log-snap-val">--</span></div>
+      <div class="log-snap-item"><span class="log-snap-icon">🪣</span><span id="logsnap-water_level" class="log-snap-val">--</span></div>
+      <div class="log-snap-item"><span class="log-snap-icon">💡</span><span id="logsnap-light" class="log-snap-val">--</span></div>
+      <div class="log-snap-item"><span class="log-snap-icon">🌊</span><span id="logsnap-water_temp" class="log-snap-val">--</span></div>
     </div>
 
-    <!-- Add note -->
-    <div class="log-input-row">
-      <input class="field-input" id="logNoteInput" placeholder="Add an observation note..." />
-      <button class="ctrl-btn primary" id="logAddBtn">+ ADD</button>
+    <!-- Notepad-style add note -->
+    <div class="log-notepad">
+      <textarea id="logNoteInput" class="log-textarea" placeholder="Write your observation here...&#10;&#10;e.g. Added nutrients today, water level looks good. Noticed new leaves forming at the top."></textarea>
+      <div class="log-notepad-footer">
+        <span class="log-char-count" id="logCharCount">0 chars</span>
+        <button class="ctrl-btn primary" id="logAddBtn">+ ADD NOTE</button>
+      </div>
     </div>
 
     <!-- Entries list -->
-    <div id="logEntries" class="log-entries">
-      <div class="log-empty">No entries yet — add your first observation above</div>
-    </div>
+    <div id="logEntries" class="log-entries"></div>
   </section>
 
-  <!-- ══ SETTINGS ══════════════════════════════════════════ -->
+  <!-- ════════════════════════════════════════════════════
+       6. SETTINGS
+       ════════════════════════════════════════════════════ -->
   <section class="page" id="page-settings">
     <div class="page-header">
       <h1 class="page-title">SETTINGS</h1>
     </div>
 
+    <!-- APPEARANCE -->
     <div class="settings-section-title">APPEARANCE</div>
     <div class="settings-card">
       <div class="settings-row">
-        <div class="settings-row-info">
+        <div>
           <div class="settings-row-label">Theme</div>
           <div class="settings-row-sub" id="themeLabel">Dark</div>
         </div>
@@ -461,7 +468,7 @@
       </div>
       <div class="settings-divider"></div>
       <div class="settings-row">
-        <div class="settings-row-info">
+        <div>
           <div class="settings-row-label">Show Info Banners</div>
           <div class="settings-row-sub">Display helpful tips on each page</div>
         </div>
@@ -472,10 +479,10 @@
       </div>
     </div>
 
+    <!-- THRESHOLDS -->
     <div class="settings-section-title" style="margin-top:28px">ALERT THRESHOLDS</div>
     <p class="settings-hint">Alerts appear on dashboard when values fall outside these ranges.</p>
-
-    <div class="settings-card" style="margin-top:12px">
+    <div class="settings-card" style="margin-top:10px">
       <div class="thr-row">
         <span class="thr-label">Air Temp (°C)</span>
         <div class="thr-inputs">
@@ -516,16 +523,19 @@
         </div>
       </div>
     </div>
-    <button class="ctrl-btn primary wide" id="saveThrBtn" style="margin-top:16px">Save Thresholds</button>
-    <div id="thrSaveMsg" style="display:none;text-align:center;margin-top:10px;color:var(--green);font-size:11px;font-family:var(--font-hud)">✅ Thresholds saved</div>
+    <button class="ctrl-btn primary wide" id="saveThrBtn" style="margin-top:14px">Save Thresholds</button>
+    <div id="thrSaveMsg" style="display:none;text-align:center;margin-top:10px;color:#69f0ae;font-size:11px;font-family:'Orbitron',sans-serif;letter-spacing:1px">✅ Thresholds saved</div>
 
+    <!-- ABOUT -->
     <div class="settings-section-title" style="margin-top:28px">ABOUT</div>
     <div class="settings-card">
-      <div class="settings-row-label" style="font-size:13px;color:var(--text)">SEKKITO Plant Monitor</div>
-      <div class="settings-row-sub" style="margin-top:6px;line-height:1.7">
-        ESP32 + ESP32-CAM<br>
-        HiveMQ MQTT · Firebase RTDB<br>
-        Web Dashboard + Flutter App with Gemini/ChatGPT integration
+      <div class="settings-row" style="display:block;padding:14px 0">
+        <div class="settings-row-label" style="font-size:13px;margin-bottom:6px">SEKKITO Plant Monitor</div>
+        <div class="settings-row-sub" style="line-height:1.8">
+          ESP32 + ESP32-CAM<br>
+          HiveMQ MQTT · Firebase RTDB<br>
+          Web Dashboard + Flutter App with Gemini / ChatGPT integration
+        </div>
       </div>
     </div>
   </section>
@@ -537,9 +547,9 @@
   <div class="modal">
     <div class="modal-icon">◆</div>
     <div class="modal-title">AI RESULT</div>
-    <div class="modal-sub">TFLite model — top 3 predictions</div>
+    <div class="modal-sub">Probability Breakdown</div>
     <div id="modalResults"></div>
-    <p class="modal-footer-hint">For detailed diagnosis & treatment advice, go to AI Portal → copy prompt → open Gemini or ChatGPT with your saved image.</p>
+    <p class="modal-footer-hint">For detailed diagnosis, go to AI Portal → copy prompt → open Gemini or ChatGPT with your saved image.</p>
     <button class="modal-dismiss" id="modalDismiss">DISMISS</button>
   </div>
 </div>
