@@ -5,14 +5,14 @@
 
 // ── FIREBASE CONFIG ────────────────────────────────────
 const firebaseConfig = {
-  apiKey:      "AIzaSyANQV1gV4-6mpejtKb-CdPmWoYDA5qMtMk",
-  databaseURL: "https://aquapi-11257-default-rtdb.asia-southeast1.firebasedatabase.app",
+  apiKey:      "AIzaSyDAvkgNiwmXgChHsQsjlF_f8y-GCUfu8rQ",
+  databaseURL: "https://plant-monitoring-2954a-default-rtdb.asia-southeast1.firebasedatabase.app",
 };
 firebase.initializeApp(firebaseConfig);
 const db = firebase.database();
 
 // RTDB REST base URL for large Base64 image fetch (no SDK size limits)
-const RTDB_REST = "https://aquapi-11257-default-rtdb.asia-southeast1.firebasedatabase.app";
+const RTDB_REST = "https://plant-monitoring-2954a-default-rtdb.asia-southeast1.firebasedatabase.app";
 
 // ── MQTT CONFIG ────────────────────────────────────────
 const MQTT_WS_URL     = "wss://broker.hivemq.com:8884/mqtt";
