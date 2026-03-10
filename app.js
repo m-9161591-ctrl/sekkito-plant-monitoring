@@ -19,6 +19,7 @@ const MQTT_WS_URL     = "wss://broker.hivemq.com:8884/mqtt";
 const TOPIC_SENSORS   = "esp32/sekkito/plant123/sensors";
 const TOPIC_RELAY     = "esp32/sekkito/plant123/relay_status";
 const TOPIC_CAPTURE   = "esp32cam/sekkito/plant123/capture";
+const TOPIC_IMAGE     = "esp32cam/sekkito/plant123/imagePlant";  // chunked Base64 stream
 const TOPIC_STATUS    = "esp32cam/sekkito/plant123/status";
 const TOPIC_AI_RESULT = "esp32cam/sekkito/plant123/aiResult";
 
@@ -49,7 +50,12 @@ let imageHistory  = [];      // max 5 data URLs
 let historyIndex  = -1;      // -1 = show latest
 let lastSeenToken = 0;
 let captureTimer  = null;
+let imgTimeoutTimer = null;
 let debugLines    = [];
+
+// ── Chunked image receive state (mirrors Flutter CameraPage) ──
+let _isReceiving  = false;
+let _base64Buffer = "";
 
 let THRESHOLDS = {
   air_temp:    { min: 18, max: 35  },
@@ -77,7 +83,6 @@ document.addEventListener('DOMContentLoaded', () => {
   wireCopyPrompt();
   wireLogPage();
   connectMQTT();
-  listenForToken();
 });
 
 // ── PERSISTENCE ────────────────────────────────────────
@@ -189,7 +194,7 @@ function connectMQTT() {
   mqttClient = mqtt.connect(MQTT_WS_URL, {
     clientId, keepalive: 20, reconnectPeriod: 3000, connectTimeout: 10000,
   });
-  mqttClient.on('connect',    () => { setStatus(true,  'Receiving ESP32 data'); mqttClient.subscribe([TOPIC_SENSORS, TOPIC_RELAY, TOPIC_STATUS, TOPIC_AI_RESULT]); });
+  mqttClient.on('connect',    () => { setStatus(true,  'Receiving ESP32 data'); mqttClient.subscribe([TOPIC_SENSORS, TOPIC_RELAY, TOPIC_IMAGE, TOPIC_STATUS, TOPIC_AI_RESULT]); });
   mqttClient.on('disconnect', () => setStatus(false, 'Disconnected — retrying'));
   mqttClient.on('error',      () => setStatus(false, 'Connection error'));
   mqttClient.on('offline',    () => setStatus(false, 'Broker offline — retrying'));
@@ -241,12 +246,74 @@ function handleMessage(topic, str) {
     } catch(e) { setCamStatus('AI result error'); }
     return;
   }
+
+  // ── Chunked Base64 image stream (mirrors Flutter CameraPage exactly) ──
+  if (topic === TOPIC_IMAGE) {
+    if (str === 'START') {
+      clearTimeout(imgTimeoutTimer);
+      _isReceiving  = true;
+      _base64Buffer = '';
+      setCamStatus('Receiving image...');
+      showTransferBar(true);
+      camLog('✅ START received — buffering chunks...');
+      // Safety timeout: abort if END never arrives
+      imgTimeoutTimer = setTimeout(() => {
+        if (_isReceiving) {
+          _isReceiving  = false;
+          _base64Buffer = '';
+          setCamStatus('⏱ Transfer timed out (no END)');
+          showTransferBar(false);
+          setCaptureBtn(false);
+          camLog('❌ Timeout waiting for END');
+        }
+      }, 30000);
+
+    } else if (str === 'END') {
+      clearTimeout(imgTimeoutTimer);
+      if (_isReceiving && _base64Buffer.length > 0) {
+        camLog(`✅ END received — Base64 length: ${_base64Buffer.length} chars (~${Math.round(_base64Buffer.length * 3 / 4 / 1024)} KB)`);
+        // Validate Base64
+        const clean = _base64Buffer.replace(/\s/g, '');
+        if (/^[A-Za-z0-9+/=]+$/.test(clean)) {
+          showImage(`data:image/jpeg;base64,${clean}`);
+          camLog('✅ Image decoded and displayed');
+          debugLines = [];
+          const panel = document.getElementById('debugPanel');
+          if (panel) panel.style.display = 'none';
+        } else {
+          setCamStatus('❌ Invalid Base64 data received');
+          camLog('❌ Base64 validation failed');
+        }
+      } else {
+        setCamStatus('⚠ END received but buffer empty');
+        camLog('⚠ END received but no data buffered');
+      }
+      _isReceiving  = false;
+      _base64Buffer = '';
+      showTransferBar(false);
+      setCaptureBtn(false);
+
+    } else {
+      // Data chunk — accumulate
+      if (_isReceiving) {
+        _base64Buffer += str;
+      }
+      // (silently ignore chunks that arrive before START)
+    }
+    return;
+  }
 }
 
 // ══════════════════════════════════════════════════════════
-//  FIREBASE CAMERA — Token watch + REST fetch
-//  Mirrors Flutter CameraPage logic exactly
+//  CAMERA IMAGE HANDLING
+//  Images are received directly via MQTT chunked Base64 stream.
+//  The ESP32-CAM publishes:
+//    1. "START"   → signals beginning of transfer
+//    2. <chunks>  → 512-byte Base64 strings (reassembled in _base64Buffer)
+//    3. "END"     → decode buffer → display image
+//  This mirrors the Flutter CameraPage implementation exactly.
 // ══════════════════════════════════════════════════════════
+
 function camLog(msg) {
   const t = new Date().toLocaleTimeString();
   const line = `[${t}] ${msg}`;
@@ -261,91 +328,6 @@ function camLog(msg) {
     const cls = l.includes('❌') ? 'err' : l.includes('✅') ? 'ok' : l.includes('⚠') ? 'warn' : '';
     return `<div class="dbline ${cls}">${l}</div>`;
   }).join('');
-}
-
-function listenForToken() {
-  camLog('RTDB: subscribing to latest_image/token...');
-  db.ref('latest_image/token').on('value', snap => {
-    const raw   = snap.val();
-    const token = (typeof raw === 'number') ? raw : (parseInt(raw) || 0);
-    camLog(`RTDB token: ${token} (${typeof raw})`);
-
-    if (token === 0) { camLog('Token = 0 — ignoring'); return; }
-    if (token === lastSeenToken) { camLog('Same token — no new image'); return; }
-
-    const age = Date.now() - token;
-    camLog(`Token age: ${Math.round(age / 1000)}s`);
-    if (age > 300000) { camLog('Token >5min old — ignoring stale'); return; }
-
-    lastSeenToken = token;
-    camLog('New token → fetching image via REST...');
-    fetchImageViaRest();
-  }, err => camLog(`❌ RTDB error: ${err}`));
-}
-
-async function fetchImageViaRest() {
-  setCamStatus('Fetching image from Firebase...');
-  showTransferBar(true);
-  try {
-    const url = `${RTDB_REST}/latest_image/data.json`;
-    camLog(`HTTP GET → ${url}`);
-    const res = await fetch(url);
-    camLog(`HTTP ${res.status}`);
-
-    if (!res.ok) {
-      const txt = await res.text();
-      camLog(`❌ Error body: ${txt.substring(0,100)}`);
-      setCamStatus(`HTTP error ${res.status}`);
-      showTransferBar(false);
-      setCaptureBtn(false);
-      return;
-    }
-
-    let body = (await res.text()).trim();
-    camLog(`Body length: ${body.length} chars`);
-    camLog(`Preview: ${body.substring(0, 60)}...`);
-
-    if (body === 'null' || body === '') {
-      camLog('⚠ null/empty — data node not written yet');
-      setCamStatus('No image data in Firebase');
-      showTransferBar(false);
-      setCaptureBtn(false);
-      return;
-    }
-
-    // Strip surrounding JSON quotes: "\"<base64>\""  →  <base64>
-    if (body.startsWith('"') && body.endsWith('"')) {
-      body = body.slice(1, -1);
-      camLog(`Stripped quotes — Base64 length: ${body.length}`);
-    } else {
-      camLog('⚠ Body not quote-wrapped — check ESP32 write format');
-    }
-    body = body.replace(/\\"/g, '"');
-
-    // Validate Base64
-    if (!/^[A-Za-z0-9+/=]+$/.test(body)) {
-      camLog(`⚠ Invalid Base64 chars — first 60: ${body.substring(0,60)}`);
-      setCamStatus('Invalid Base64 data');
-      showTransferBar(false);
-      setCaptureBtn(false);
-      return;
-    }
-
-    camLog(`✅ Valid Base64 (~${Math.round(body.length * 3 / 4 / 1024)} KB) — displaying`);
-    showImage(`data:image/jpeg;base64,${body}`);
-    showTransferBar(false);
-    setCaptureBtn(false);
-    // Clear debug panel on success
-    debugLines = [];
-    const panel = document.getElementById('debugPanel');
-    if (panel) panel.style.display = 'none';
-
-  } catch(err) {
-    camLog(`❌ Exception: ${err.message}`);
-    setCamStatus(`Fetch error: ${err.message}`);
-    showTransferBar(false);
-    setCaptureBtn(false);
-  }
 }
 
 function showImage(dataUrl) {
@@ -409,12 +391,19 @@ function wireCamera() {
     setCaptureBtn(true);
     setCamStatus('Sending capture command to ESP32-CAM...');
     document.getElementById('aiResultBadge').style.display = 'none';
+    // Reset receive state
+    _isReceiving  = false;
+    _base64Buffer = '';
     mqttClient.publish(TOPIC_CAPTURE, 'capture');
+    camLog('📸 capture command sent → waiting for START...');
     clearTimeout(captureTimer);
     captureTimer = setTimeout(() => {
-      setCaptureBtn(false);
-      setCamStatus('⏱ No response — check ESP32-CAM is powered on');
-    }, 30000);
+      if (!_isReceiving && _base64Buffer.length === 0) {
+        setCaptureBtn(false);
+        setCamStatus('⏱ No response — check ESP32-CAM is powered on');
+        camLog('⏱ No START received within 15s');
+      }
+    }, 15000);
   });
 
   document.getElementById('saveBtn')?.addEventListener('click', () => {
