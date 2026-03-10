@@ -42,20 +42,15 @@ const KEY_MAP = {
 };
 
 // ── STATE ──────────────────────────────────────────────
-let mqttClient    = null;
-let sensorData    = {};
-let relayData     = { relay: 'UNKNOWN', reason: '', window: '' };
-let imageDataUrl  = null;
-let imageHistory  = [];      // max 5 data URLs
-let historyIndex  = -1;      // -1 = show latest
-let lastSeenToken = 0;
-let captureTimer  = null;
-let imgTimeoutTimer = null;
-let debugLines    = [];
-
-// ── Chunked image receive state (mirrors Flutter CameraPage) ──
-let _isReceiving  = false;
-let _base64Buffer = "";
+let mqttClient       = null;
+let sensorData       = {};
+let relayData        = { relay: 'UNKNOWN', reason: '', window: '' };
+let base64Buffer     = "";
+let isReceivingImage = false;
+let imageDataUrl     = null;
+let imageTimeout     = null;
+let imageHistory     = [];   // max 5 data URLs
+let historyIndex     = -1;   // -1 = show latest
 
 let THRESHOLDS = {
   air_temp:    { min: 18, max: 35  },
@@ -247,163 +242,77 @@ function handleMessage(topic, str) {
     return;
   }
 
-  // ── Chunked Base64 image stream (mirrors Flutter CameraPage exactly) ──
+  // Image transfer (Base64 chunked)
   if (topic === TOPIC_IMAGE) {
     if (str === 'START') {
-      clearTimeout(imgTimeoutTimer);
-      _isReceiving  = true;
-      _base64Buffer = '';
-      setCamStatus('Receiving image...');
-      showTransferBar(true);
-      camLog('✅ START received — buffering chunks...');
-      // Safety timeout: abort if END never arrives
-      imgTimeoutTimer = setTimeout(() => {
-        if (_isReceiving) {
-          _isReceiving  = false;
-          _base64Buffer = '';
-          setCamStatus('⏱ Transfer timed out (no END)');
-          showTransferBar(false);
+      clearTimeout(imageTimeout);
+      base64Buffer = ''; isReceivingImage = true;
+      setPreviewReceiving(true); showTransferBar(true);
+      setCamStatus('Receiving image from ESP32-CAM...');
+      imageTimeout = setTimeout(() => {
+        if (isReceivingImage) {
+          isReceivingImage = false;
+          setPreviewReceiving(false); showTransferBar(false);
           setCaptureBtn(false);
-          camLog('❌ Timeout waiting for END');
+          setCamStatus('⏱ Transfer timed out — tap Capture to try again');
         }
-      }, 30000);
-
+      }, 20000);
     } else if (str === 'END') {
-      clearTimeout(imgTimeoutTimer);
-      if (_isReceiving && _base64Buffer.length > 0) {
-        camLog(`✅ END received — Base64 length: ${_base64Buffer.length} chars (~${Math.round(_base64Buffer.length * 3 / 4 / 1024)} KB)`);
-        // Validate Base64
-        const clean = _base64Buffer.replace(/\s/g, '');
-        if (/^[A-Za-z0-9+/=]+$/.test(clean)) {
-          showImage(`data:image/jpeg;base64,${clean}`);
-          camLog('✅ Image decoded and displayed');
-          debugLines = [];
-          const panel = document.getElementById('debugPanel');
-          if (panel) panel.style.display = 'none';
-        } else {
-          setCamStatus('❌ Invalid Base64 data received');
-          camLog('❌ Base64 validation failed');
+      clearTimeout(imageTimeout);
+      if (base64Buffer.length > 0) {
+        try {
+          imageDataUrl = `data:image/jpeg;base64,${base64Buffer}`;
+          const img = document.getElementById('capturedImage');
+          img.src   = imageDataUrl;
+          img.style.display = 'block';
+          document.getElementById('noImageMsg').style.display = 'none';
+          isReceivingImage = false;
+          setPreviewReceiving(false); showTransferBar(false);
+          setCaptureBtn(false);
+          document.getElementById('saveBtn').disabled = false;
+          base64Buffer = '';
+          setCamStatus('✅ Image ready — Save it, then use AI Portal for full diagnosis');
+          // Add to history
+          imageHistory.unshift(imageDataUrl);
+          if (imageHistory.length > 5) imageHistory.pop();
+          historyIndex = -1;
+          renderHistoryThumbs();
+        } catch(e) {
+          isReceivingImage = false;
+          setPreviewReceiving(false); showTransferBar(false);
+          setCaptureBtn(false);
+          setCamStatus('Image decode failed — try capturing again');
         }
-      } else {
-        setCamStatus('⚠ END received but buffer empty');
-        camLog('⚠ END received but no data buffered');
       }
-      _isReceiving  = false;
-      _base64Buffer = '';
-      showTransferBar(false);
-      setCaptureBtn(false);
-
     } else {
-      // Data chunk — accumulate
-      if (_isReceiving) {
-        _base64Buffer += str;
+      if (isReceivingImage) {
+        base64Buffer += str;
+        const approxPct = Math.min(95, (base64Buffer.length / 150000) * 100);
+        document.getElementById('transferFill').style.width = approxPct + '%';
       }
-      // (silently ignore chunks that arrive before START)
     }
-    return;
   }
 }
 
 // ══════════════════════════════════════════════════════════
-//  CAMERA IMAGE HANDLING
-//  Images are received directly via MQTT chunked Base64 stream.
-//  The ESP32-CAM publishes:
-//    1. "START"   → signals beginning of transfer
-//    2. <chunks>  → 512-byte Base64 strings (reassembled in _base64Buffer)
-//    3. "END"     → decode buffer → display image
-//  This mirrors the Flutter CameraPage implementation exactly.
+//  CAMERA
 // ══════════════════════════════════════════════════════════
 
-function camLog(msg) {
-  const t = new Date().toLocaleTimeString();
-  const line = `[${t}] ${msg}`;
-  console.log('📷', line);
-  debugLines.unshift(line);
-  if (debugLines.length > 8) debugLines.pop();
-  const panel = document.getElementById('debugPanel');
-  const log   = document.getElementById('debugLog');
-  if (!panel || !log) return;
-  panel.style.display = 'block';
-  log.innerHTML = debugLines.map(l => {
-    const cls = l.includes('❌') ? 'err' : l.includes('✅') ? 'ok' : l.includes('⚠') ? 'warn' : '';
-    return `<div class="dbline ${cls}">${l}</div>`;
-  }).join('');
-}
-
-function showImage(dataUrl) {
-  imageDataUrl = dataUrl;
-  imageHistory.unshift(dataUrl);
-  if (imageHistory.length > 5) imageHistory.pop();
-  historyIndex = -1;
-
-  const img  = document.getElementById('capturedImage');
-  const noImg = document.getElementById('noImageMsg');
-  if (img)  { img.src = dataUrl; img.style.display = 'block'; }
-  if (noImg) noImg.style.display = 'none';
-
-  const badge = document.getElementById('historyBadge');
-  if (badge) badge.style.display = 'none';
-
-  document.getElementById('saveBtn').disabled = false;
-
-  const sz = Math.round(dataUrl.length * 3 / 4 / 1024);
-  setCamStatus(`✅ Image Ready (${sz} KB)`);
-
-  renderHistoryThumbs();
-}
-
-function renderHistoryThumbs() {
-  const container = document.getElementById('imgHistory');
-  if (!container) return;
-  if (imageHistory.length <= 1) { container.innerHTML = ''; return; }
-
-  container.innerHTML = imageHistory.map((url, i) => {
-    const active = (historyIndex === i) || (historyIndex === -1 && i === 0);
-    return `<div class="hist-thumb ${active ? 'active' : ''}" data-idx="${i}">
-      <img src="${url}" alt="Capture ${i+1}" loading="lazy" />
-    </div>`;
-  }).join('');
-
-  container.querySelectorAll('.hist-thumb').forEach(el => {
-    el.addEventListener('click', () => {
-      const idx = parseInt(el.dataset.idx);
-      historyIndex = idx;
-      const img   = document.getElementById('capturedImage');
-      const badge = document.getElementById('historyBadge');
-      if (img) img.src = imageHistory[idx];
-      if (badge) {
-        if (idx > 0) {
-          badge.textContent = `HISTORY ${imageHistory.length - idx}/${imageHistory.length}`;
-          badge.style.display = 'block';
-        } else {
-          badge.style.display = 'none';
-        }
-      }
-      renderHistoryThumbs();
-    });
-  });
-}
-
-// ── CAMERA WIRING ──────────────────────────────────────
 function wireCamera() {
   document.getElementById('captureBtn')?.addEventListener('click', () => {
-    if (!mqttClient?.connected) { setCamStatus('Not connected to MQTT'); return; }
+    if (!mqttClient?.connected) { setCamStatus('Not connected to MQTT — check broker'); return; }
     setCaptureBtn(true);
     setCamStatus('Sending capture command to ESP32-CAM...');
     document.getElementById('aiResultBadge').style.display = 'none';
-    // Reset receive state
-    _isReceiving  = false;
-    _base64Buffer = '';
     mqttClient.publish(TOPIC_CAPTURE, 'capture');
-    camLog('📸 capture command sent → waiting for START...');
-    clearTimeout(captureTimer);
-    captureTimer = setTimeout(() => {
-      if (!_isReceiving && _base64Buffer.length === 0) {
+    clearTimeout(imageTimeout);
+    imageTimeout = setTimeout(() => {
+      if (!isReceivingImage && base64Buffer.length === 0) {
+        isReceivingImage = false;
         setCaptureBtn(false);
         setCamStatus('⏱ No response — check ESP32-CAM is powered on');
-        camLog('⏱ No START received within 15s');
       }
-    }, 15000);
+    }, 8000);
   });
 
   document.getElementById('saveBtn')?.addEventListener('click', () => {
@@ -413,6 +322,32 @@ function wireCamera() {
     a.download = `plant_${Date.now()}.jpg`;
     a.click();
     setTimeout(() => setCamStatus('Image saved! → Go to AI Portal for diagnosis prompt'), 800);
+  });
+}
+
+function renderHistoryThumbs() {
+  const container = document.getElementById('imgHistory');
+  if (!container) return;
+  if (imageHistory.length <= 1) { container.innerHTML = ''; return; }
+  container.innerHTML = imageHistory.map((url, i) => {
+    const active = (historyIndex === i) || (historyIndex === -1 && i === 0);
+    return `<div class="hist-thumb ${active ? 'active' : ''}" data-idx="${i}">
+      <img src="${url}" alt="Capture ${i+1}" loading="lazy" />
+    </div>`;
+  }).join('');
+  container.querySelectorAll('.hist-thumb').forEach(el => {
+    el.addEventListener('click', () => {
+      const idx = parseInt(el.dataset.idx);
+      historyIndex = idx;
+      const img   = document.getElementById('capturedImage');
+      const badge = document.getElementById('historyBadge');
+      if (img) img.src = imageHistory[idx];
+      if (badge) {
+        badge.textContent = idx > 0 ? `HISTORY ${imageHistory.length - idx}/${imageHistory.length}` : '';
+        badge.style.display = idx > 0 ? 'block' : 'none';
+      }
+      renderHistoryThumbs();
+    });
   });
 }
 
@@ -428,11 +363,14 @@ function setCaptureBtn(busy) {
     ? '<span class="btn-icon">◌</span> PROCESSING...'
     : '<span class="btn-icon">◎</span> CAPTURE';
 }
+function setPreviewReceiving(on) {
+  document.getElementById('cameraPreview')?.classList.toggle('receiving', on);
+}
 function showTransferBar(on) {
   const bar  = document.getElementById('transferBar');
   const fill = document.getElementById('transferFill');
-  if (bar)  bar.style.display  = on ? 'block' : 'none';
-  if (fill) fill.style.width   = on ? '60%' : '0%';
+  if (bar)  bar.style.display = on ? 'block' : 'none';
+  if (fill && !on) fill.style.width = '0%';
 }
 
 // ══════════════════════════════════════════════════════════
