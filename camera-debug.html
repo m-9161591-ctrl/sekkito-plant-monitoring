@@ -1,0 +1,511 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>SEKKITO — Camera Debug Tool</title>
+<script src="https://unpkg.com/mqtt@4.3.7/dist/mqtt.min.js"></script>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { background: #07070f; color: #e0e0e0; font-family: 'Courier New', monospace; font-size: 13px; padding: 16px; }
+  h1 { font-size: 16px; color: #00e5d0; letter-spacing: 3px; margin-bottom: 4px; }
+  .sub { color: #555; font-size: 11px; margin-bottom: 20px; }
+
+  .row { display: flex; gap: 12px; flex-wrap: wrap; margin-bottom: 12px; }
+  .card { background: rgba(255,255,255,0.04); border: 1px solid rgba(255,255,255,0.08); border-radius: 10px; padding: 14px; flex: 1; min-width: 220px; }
+  .card-title { color: #00e5d0; font-size: 10px; letter-spacing: 2px; margin-bottom: 10px; }
+
+  /* Status */
+  .dot { display: inline-block; width: 9px; height: 9px; border-radius: 50%; background: #f00; margin-right: 8px; }
+  .dot.on { background: #00e5d0; box-shadow: 0 0 6px #00e5d0; }
+  #mqttStatus { font-size: 12px; }
+
+  /* Log */
+  #log { height: 240px; overflow-y: auto; font-size: 11px; line-height: 1.7; }
+  .ln { padding: 1px 0; border-bottom: 1px solid rgba(255,255,255,0.03); }
+  .ln .ts { color: #444; margin-right: 8px; }
+  .ln.ok   .msg { color: #69f0ae; }
+  .ln.err  .msg { color: #ff5370; }
+  .ln.warn .msg { color: #ffab40; }
+  .ln.info .msg { color: #4fc3f7; }
+  .ln.data .msg { color: #e0e0e0; }
+  .ln.chunk .msg { color: #9e9e9e; }
+
+  /* Stats */
+  .stat { display: flex; justify-content: space-between; margin-bottom: 6px; font-size: 12px; }
+  .stat .lbl { color: #666; }
+  .stat .val { color: #e0e0e0; font-weight: bold; }
+  .stat .val.good { color: #69f0ae; }
+  .stat .val.bad  { color: #ff5370; }
+  .stat .val.warn { color: #ffab40; }
+
+  /* Image */
+  #imgWrap { width: 100%; aspect-ratio: 4/3; background: #111; border-radius: 8px; overflow: hidden; display: flex; align-items: center; justify-content: center; }
+  #imgWrap img { width: 100%; height: 100%; object-fit: contain; display: none; }
+  #imgWrap .placeholder { color: #333; font-size: 11px; text-align: center; }
+
+  /* Progress */
+  .prog-bg { background: rgba(255,255,255,0.06); border-radius: 4px; height: 6px; margin: 8px 0; overflow: hidden; }
+  .prog-fill { height: 100%; background: #00e5d0; border-radius: 4px; transition: width 0.3s; width: 0%; }
+
+  /* Buttons */
+  .btns { display: flex; gap: 8px; flex-wrap: wrap; }
+  button { background: rgba(0,229,208,0.1); border: 1px solid rgba(0,229,208,0.3); color: #00e5d0; padding: 8px 16px; border-radius: 6px; cursor: pointer; font-family: inherit; font-size: 12px; letter-spacing: 1px; transition: background 0.2s; }
+  button:hover { background: rgba(0,229,208,0.2); }
+  button:disabled { opacity: 0.4; cursor: not-allowed; }
+  button.danger { border-color: rgba(255,83,112,0.4); color: #ff5370; background: rgba(255,83,112,0.07); }
+  button.danger:hover { background: rgba(255,83,112,0.15); }
+
+  /* Test panels */
+  .test-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+  .test-item { background: rgba(255,255,255,0.02); border: 1px solid rgba(255,255,255,0.06); border-radius: 6px; padding: 10px; }
+  .test-item .test-name { font-size: 10px; color: #888; margin-bottom: 4px; }
+  .test-item .test-val  { font-size: 12px; }
+  .pass { color: #69f0ae; } .fail { color: #ff5370; } .pend { color: #ffab40; }
+
+  /* MQTT packet size warning */
+  .warning-box { background: rgba(255,171,64,0.07); border: 1px solid rgba(255,171,64,0.3); border-radius: 8px; padding: 12px 14px; margin-bottom: 12px; font-size: 11px; color: #ffab40; line-height: 1.6; }
+  .warning-box b { color: #ffd54f; }
+
+  hr { border: none; border-top: 1px solid rgba(255,255,255,0.06); margin: 12px 0; }
+  .section-label { font-size: 9px; letter-spacing: 2px; color: #444; margin-bottom: 8px; }
+</style>
+</head>
+<body>
+
+<h1>◎ SEKKITO CAMERA DEBUG</h1>
+<p class="sub">Standalone diagnostic tool — open this alongside your main dashboard to trace the full image transfer pipeline.</p>
+
+<div class="warning-box">
+  <b>⚠ Common cause of missing images:</b> Browser MQTT.js has a default max packet size of <b>1 MB</b>. A VGA JPEG can be ~30–60 KB raw, but Base64 encoded = ~80 KB. Each chunk is 512 bytes so ~160 chunks are sent. If <b>any chunk is dropped</b> silently, the image buffer is corrupted. This tool measures exactly what's happening.
+</div>
+
+<!-- Row 1: Connection + Controls -->
+<div class="row">
+  <div class="card" style="min-width:300px">
+    <div class="card-title">MQTT CONNECTION</div>
+    <div style="display:flex; align-items:center; margin-bottom:12px">
+      <span class="dot" id="dot"></span>
+      <span id="mqttStatus">Disconnected</span>
+    </div>
+    <div class="btns">
+      <button id="connectBtn" onclick="doConnect()">CONNECT</button>
+      <button id="disconnectBtn" onclick="doDisconnect()" disabled>DISCONNECT</button>
+    </div>
+    <hr/>
+    <div class="section-label">CAPTURE TEST</div>
+    <div class="btns">
+      <button id="captureBtn" onclick="sendCapture()" disabled>📸 SEND CAPTURE</button>
+      <button class="danger" onclick="clearAll()">CLEAR</button>
+    </div>
+    <p style="color:#555;font-size:10px;margin-top:8px">Publishes "capture" to esp32cam/sekkito/plant123/capture</p>
+  </div>
+
+  <div class="card" style="min-width:260px">
+    <div class="card-title">TRANSFER STATS</div>
+    <div class="stat"><span class="lbl">Status</span>      <span class="val" id="s-status">IDLE</span></div>
+    <div class="stat"><span class="lbl">START received</span> <span class="val" id="s-start">—</span></div>
+    <div class="stat"><span class="lbl">END received</span>   <span class="val" id="s-end">—</span></div>
+    <div class="stat"><span class="lbl">Chunks received</span><span class="val" id="s-chunks">0</span></div>
+    <div class="stat"><span class="lbl">Buffer size</span>   <span class="val" id="s-buflen">0 chars</span></div>
+    <div class="stat"><span class="lbl">Est. image size</span><span class="val" id="s-imgkb">— KB</span></div>
+    <div class="stat"><span class="lbl">Transfer time</span> <span class="val" id="s-time">—</span></div>
+    <div class="prog-bg"><div class="prog-fill" id="prog"></div></div>
+    <div style="font-size:10px;color:#444;margin-top:4px">Buffer fill progress (estimated)</div>
+  </div>
+
+  <div class="card" style="min-width:220px">
+    <div class="card-title">VALIDATION CHECKS</div>
+    <div class="test-grid">
+      <div class="test-item"><div class="test-name">START msg</div>     <div class="test-val pend" id="chk-start">WAIT</div></div>
+      <div class="test-item"><div class="test-name">END msg</div>       <div class="test-val pend" id="chk-end">WAIT</div></div>
+      <div class="test-item"><div class="test-name">Base64 valid</div>  <div class="test-val pend" id="chk-b64">WAIT</div></div>
+      <div class="test-item"><div class="test-name">Image renders</div> <div class="test-val pend" id="chk-img">WAIT</div></div>
+      <div class="test-item"><div class="test-name">No gaps</div>       <div class="test-val pend" id="chk-gaps">WAIT</div></div>
+      <div class="test-item"><div class="test-name">MQTT subscribed</div><div class="test-val pend" id="chk-sub">WAIT</div></div>
+    </div>
+  </div>
+</div>
+
+<!-- Row 2: Image + Log -->
+<div class="row">
+  <div class="card" style="min-width:260px; max-width:400px">
+    <div class="card-title">CAPTURED IMAGE</div>
+    <div id="imgWrap">
+      <img id="resultImg" alt="result"/>
+      <div class="placeholder" id="imgPlaceholder">Waiting for image...</div>
+    </div>
+    <div id="imgInfo" style="font-size:10px;color:#555;margin-top:8px;text-align:center">—</div>
+  </div>
+
+  <div class="card" style="flex:2; min-width:300px">
+    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px">
+      <div class="card-title" style="margin-bottom:0">EVENT LOG</div>
+      <div style="display:flex; gap:8px">
+        <label style="font-size:10px;color:#555;display:flex;align-items:center;gap:4px">
+          <input type="checkbox" id="showChunks" style="width:12px;height:12px"/> show chunks
+        </label>
+        <button style="padding:3px 10px;font-size:10px" onclick="clearLog()">clear</button>
+      </div>
+    </div>
+    <div id="log"></div>
+  </div>
+</div>
+
+<!-- Row 3: Raw chunk inspector -->
+<div class="row">
+  <div class="card">
+    <div class="card-title">CHUNK INSPECTOR — last 3 chunks received</div>
+    <div id="chunkInspector" style="font-size:10px;color:#666;font-family:monospace;line-height:1.8">
+      No chunks yet. Trigger a capture to begin.
+    </div>
+  </div>
+  <div class="card">
+    <div class="card-title">RAW BUFFER PREVIEW (first & last 80 chars)</div>
+    <div id="bufPreview" style="font-size:10px;color:#888;word-break:break-all;line-height:1.8">
+      —
+    </div>
+  </div>
+</div>
+
+<script>
+// ── Config ────────────────────────────────────────
+const BROKER      = 'wss://broker.hivemq.com:8884/mqtt';
+const T_CAPTURE   = 'esp32cam/sekkito/plant123/capture';
+const T_IMAGE     = 'esp32cam/sekkito/plant123/imagePlant';
+const T_STATUS    = 'esp32cam/sekkito/plant123/status';
+const T_AI_RESULT = 'esp32cam/sekkito/plant123/aiResult';
+const T_SENSORS   = 'esp32/sekkito/plant123/sensors';
+
+// ── State ─────────────────────────────────────────
+let client       = null;
+let receiving    = false;
+let b64buffer    = '';
+let chunkCount   = 0;
+let startTime    = 0;
+let lastChunks   = [];   // last 3 raw chunks for inspector
+let xferTimer    = null;
+
+// ── Logging ───────────────────────────────────────
+function log(msg, type='info') {
+  const showChunks = document.getElementById('showChunks').checked;
+  if (type === 'chunk' && !showChunks) return;
+  const el  = document.getElementById('log');
+  const ts  = new Date().toLocaleTimeString('en', { hour12: false });
+  const div = document.createElement('div');
+  div.className = `ln ${type}`;
+  div.innerHTML = `<span class="ts">${ts}</span><span class="msg">${msg}</span>`;
+  el.prepend(div);
+  // Keep max 200 lines
+  while (el.children.length > 200) el.removeChild(el.lastChild);
+}
+
+function clearLog() { document.getElementById('log').innerHTML = ''; }
+function clearAll()  { clearLog(); resetState(); }
+
+function chk(id, state, text) {
+  const el = document.getElementById(id);
+  if (!el) return;
+  el.textContent  = text;
+  el.className = 'test-val ' + (state === 'pass' ? 'pass' : state === 'fail' ? 'fail' : 'pend');
+}
+
+function stat(id, text, cls='') {
+  const el = document.getElementById(id);
+  if (!el) return;
+  el.textContent = text;
+  el.className = 'val ' + cls;
+}
+
+// ── MQTT ──────────────────────────────────────────
+function doConnect() {
+  if (client) doDisconnect();
+  const cid = `sekkito_debug_${Date.now()}`;
+  log(`Connecting to ${BROKER} as ${cid}...`, 'info');
+
+  client = mqtt.connect(BROKER, {
+    clientId: cid,
+    keepalive: 30,
+    reconnectPeriod: 0,          // no auto-reconnect — we control it
+    connectTimeout: 12000,
+    // ⚠ Explicitly bump packet size to handle large chunked streams
+    // mqtt.js default is 1MB which should be fine, but being explicit helps
+  });
+
+  client.on('connect', () => {
+    log('✅ Connected to HiveMQ broker', 'ok');
+    document.getElementById('dot').classList.add('on');
+    document.getElementById('mqttStatus').textContent = 'Connected';
+    document.getElementById('connectBtn').disabled    = true;
+    document.getElementById('disconnectBtn').disabled = false;
+    document.getElementById('captureBtn').disabled    = false;
+
+    const topics = [T_IMAGE, T_STATUS, T_AI_RESULT, T_SENSORS];
+    client.subscribe(topics, { qos: 0 }, (err, granted) => {
+      if (err) {
+        log(`❌ Subscribe error: ${err.message}`, 'err');
+        chk('chk-sub', 'fail', 'FAIL');
+        return;
+      }
+      log(`✅ Subscribed to ${topics.length} topics:`, 'ok');
+      granted.forEach(g => log(`   • ${g.topic} (qos${g.qos})`, 'info'));
+      chk('chk-sub', 'pass', 'OK');
+    });
+  });
+
+  client.on('error',      e  => { log(`❌ MQTT error: ${e.message}`, 'err'); });
+  client.on('offline',    () => { log('⚠ Broker offline', 'warn'); setOffline(); });
+  client.on('disconnect', () => { log('Disconnected', 'warn'); setOffline(); });
+  client.on('reconnect',  () => log('Reconnecting...', 'warn'));
+
+  client.on('message', (topic, payload) => {
+    const str = payload.toString('utf8');
+    handleMsg(topic, str, payload.length);
+  });
+
+  // Track packet-level events for debugging drops
+  client.on('packetsend',    pkt => { /* can log if needed */ });
+  client.on('packetreceive',pkt => { /* can log if needed */ });
+}
+
+function setOffline() {
+  document.getElementById('dot').classList.remove('on');
+  document.getElementById('mqttStatus').textContent = 'Disconnected';
+  document.getElementById('connectBtn').disabled    = false;
+  document.getElementById('disconnectBtn').disabled = true;
+  document.getElementById('captureBtn').disabled    = true;
+}
+
+function doDisconnect() {
+  if (client) { client.end(true); client = null; }
+  setOffline();
+  log('Disconnected manually', 'warn');
+}
+
+// ── Message handler ───────────────────────────────
+function handleMsg(topic, str, byteLen) {
+  // ── Sensor heartbeat (confirms MQTT is alive) ──
+  if (topic === T_SENSORS) {
+    log(`💚 Sensor data received (${byteLen} bytes) — MQTT is alive`, 'ok');
+    return;
+  }
+
+  if (topic === T_STATUS) {
+    log(`📡 CAM STATUS: ${str}`, 'info');
+    return;
+  }
+
+  if (topic === T_AI_RESULT) {
+    log(`🤖 AI RESULT: ${str.substring(0, 120)}`, 'ok');
+    return;
+  }
+
+  if (topic === T_IMAGE) {
+    if (str === 'START') {
+      // ── BEGIN transfer ──
+      clearTimeout(xferTimer);
+      receiving   = true;
+      b64buffer   = '';
+      chunkCount  = 0;
+      lastChunks  = [];
+      startTime   = Date.now();
+
+      log('━━━ START received ━━━', 'ok');
+      log(`  Timestamp: ${new Date().toISOString()}`, 'info');
+
+      stat('s-status',  'RECEIVING', 'warn');
+      stat('s-start',   new Date().toLocaleTimeString(), 'good');
+      stat('s-end',     '—');
+      stat('s-chunks',  '0');
+      stat('s-buflen',  '0 chars');
+      stat('s-imgkb',   '— KB');
+      stat('s-time',    '—');
+      document.getElementById('prog').style.width = '5%';
+
+      chk('chk-start', 'pass', 'RECV');
+      chk('chk-end',   'pend', 'WAIT');
+      chk('chk-b64',   'pend', 'WAIT');
+      chk('chk-img',   'pend', 'WAIT');
+      chk('chk-gaps',  'pend', 'WAIT');
+      document.getElementById('bufPreview').textContent = 'Receiving...';
+
+      // ── Safety timeout 35s ──
+      xferTimer = setTimeout(() => {
+        if (!receiving) return;
+        log(`❌ TIMEOUT — never received END after 35s. Got ${chunkCount} chunks, buffer=${b64buffer.length} chars`, 'err');
+        log(`   💡 Possible causes: broker dropped END message, ESP32-CAM crashed mid-send, or WiFi cut out`, 'warn');
+        stat('s-status', 'TIMEOUT', 'bad');
+        chk('chk-end', 'fail', 'TIMEOUT');
+        receiving = false;
+        inspectBuffer();
+      }, 35000);
+
+    } else if (str === 'END') {
+      // ── END transfer ──
+      clearTimeout(xferTimer);
+      const elapsed = Date.now() - startTime;
+      receiving = false;
+
+      log('━━━ END received ━━━', 'ok');
+      log(`  Chunks: ${chunkCount}`, 'info');
+      log(`  Buffer length: ${b64buffer.length} chars`, 'info');
+      log(`  Estimated decoded: ${Math.round(b64buffer.length * 3 / 4 / 1024)} KB`, 'info');
+      log(`  Transfer time: ${elapsed} ms`, 'info');
+
+      stat('s-status', 'DECODING', 'warn');
+      stat('s-end',    new Date().toLocaleTimeString(), 'good');
+      stat('s-time',   `${elapsed} ms`, 'good');
+
+      chk('chk-end', 'pass', 'RECV');
+
+      // Check for gaps (invalid chars in Base64)
+      const clean = b64buffer.replace(/\s/g, '');
+      const badChars = clean.replace(/[A-Za-z0-9+/=]/g, '');
+      if (badChars.length > 0) {
+        log(`❌ Buffer has ${badChars.length} invalid Base64 chars: "${badChars.substring(0,40)}"`, 'err');
+        log(`   💡 This usually means a chunk was corrupted or two chunks got merged`, 'warn');
+        chk('chk-gaps', 'fail', 'CORRUPT');
+        chk('chk-b64',  'fail', 'INVALID');
+      } else {
+        log(`✅ Buffer passes Base64 character check`, 'ok');
+        chk('chk-b64',  'pass', 'VALID');
+        chk('chk-gaps', 'pass', 'CLEAN');
+      }
+
+      // Padding check
+      const padNeeded = (4 - (clean.length % 4)) % 4;
+      if (padNeeded > 0) {
+        log(`⚠ Buffer length ${clean.length} not a multiple of 4 — adding ${padNeeded} padding char(s)`, 'warn');
+      }
+      const padded = clean + '='.repeat(padNeeded);
+
+      inspectBuffer();
+
+      // Try to decode
+      try {
+        const dataUrl = `data:image/jpeg;base64,${padded}`;
+        const img = document.getElementById('resultImg');
+        img.onload = () => {
+          log(`✅ Image rendered successfully! ${img.naturalWidth}×${img.naturalHeight}px`, 'ok');
+          stat('s-status', 'DONE ✅', 'good');
+          chk('chk-img', 'pass', 'OK');
+          document.getElementById('imgPlaceholder').style.display = 'none';
+          document.getElementById('imgInfo').textContent = `${img.naturalWidth}×${img.naturalHeight} | ~${Math.round(padded.length * 3 / 4 / 1024)} KB`;
+          document.getElementById('prog').style.width = '100%';
+        };
+        img.onerror = () => {
+          log(`❌ Image decode failed — browser rejected the JPEG data`, 'err');
+          log(`   💡 The Base64 chars are valid but the JPEG is malformed.`, 'warn');
+          log(`      This means some chunks were silently dropped (reordered or lost).`, 'warn');
+          log(`      Check ESP32-CAM serial: did all chunks send? Any "publish failed"?`, 'warn');
+          stat('s-status', 'DECODE FAIL', 'bad');
+          chk('chk-img', 'fail', 'FAIL');
+          document.getElementById('prog').style.width = '0%';
+        };
+        img.src = dataUrl;
+        img.style.display = 'block';
+
+      } catch(e) {
+        log(`❌ Exception decoding: ${e.message}`, 'err');
+        stat('s-status', 'ERROR', 'bad');
+        chk('chk-img', 'fail', 'EXC');
+      }
+
+    } else {
+      // ── DATA CHUNK ──
+      if (!receiving) {
+        log(`⚠ Chunk received BEFORE START (${byteLen} bytes, "${str.substring(0,20)}...") — ignoring`, 'warn');
+        return;
+      }
+
+      chunkCount++;
+      b64buffer += str;
+
+      // Keep last 3 raw chunks for inspector
+      lastChunks.push({ n: chunkCount, len: str.length, bytes: byteLen, preview: str.substring(0,24) });
+      if (lastChunks.length > 3) lastChunks.shift();
+
+      // Update stats every 10 chunks to avoid UI thrashing
+      if (chunkCount % 10 === 0 || chunkCount === 1) {
+        stat('s-chunks', chunkCount);
+        stat('s-buflen', `${b64buffer.length} chars`);
+        stat('s-imgkb',  `~${Math.round(b64buffer.length * 3 / 4 / 1024)} KB`);
+        // Estimate progress (typical VGA ~80KB base64 = ~110000 chars)
+        const pct = Math.min(95, Math.round(b64buffer.length / 110000 * 100));
+        document.getElementById('prog').style.width = pct + '%';
+
+        updateChunkInspector();
+      }
+
+      log(`chunk #${chunkCount}: ${byteLen}B, str_len=${str.length}, buf_total=${b64buffer.length}`, 'chunk');
+    }
+  }
+}
+
+function inspectBuffer() {
+  const pre = document.getElementById('bufPreview');
+  if (b64buffer.length === 0) { pre.textContent = '(empty)'; return; }
+  const first = b64buffer.substring(0, 80);
+  const last  = b64buffer.substring(Math.max(0, b64buffer.length - 80));
+  pre.innerHTML = `<span style="color:#4fc3f7">FIRST 80:</span> ${first}<br><span style="color:#4fc3f7">LAST 80:</span>  ${last}`;
+}
+
+function updateChunkInspector() {
+  const el = document.getElementById('chunkInspector');
+  if (lastChunks.length === 0) { el.textContent = 'No chunks yet.'; return; }
+  el.innerHTML = lastChunks.map(c =>
+    `<div>#${c.n} | str_len=${c.len} | mqtt_bytes=${c.bytes} | preview: <span style="color:#e0e0e0">${c.preview}</span></div>`
+  ).join('');
+}
+
+// ── Capture ───────────────────────────────────────
+function sendCapture() {
+  if (!client?.connected) { log('❌ Not connected', 'err'); return; }
+  receiving   = false;
+  b64buffer   = '';
+  chunkCount  = 0;
+  lastChunks  = [];
+
+  // Reset UI
+  document.getElementById('resultImg').style.display = 'none';
+  document.getElementById('resultImg').src = '';
+  document.getElementById('imgPlaceholder').style.display = 'block';
+  document.getElementById('imgInfo').textContent = '—';
+  document.getElementById('bufPreview').textContent = 'Waiting...';
+  document.getElementById('chunkInspector').textContent = 'Waiting for chunks...';
+  document.getElementById('prog').style.width = '0%';
+  ['chk-start','chk-end','chk-b64','chk-img','chk-gaps'].forEach(id => chk(id, 'pend', 'WAIT'));
+  stat('s-status',  'WAITING', 'warn');
+  stat('s-start',   '—');
+  stat('s-end',     '—');
+  stat('s-chunks',  '0');
+  stat('s-buflen',  '0 chars');
+  stat('s-imgkb',   '— KB');
+  stat('s-time',    '—');
+
+  client.publish(T_CAPTURE, 'capture', { qos: 0 }, err => {
+    if (err) { log(`❌ Publish failed: ${err.message}`, 'err'); return; }
+    log(`📸 "capture" sent to ${T_CAPTURE}`, 'ok');
+    log('   Waiting for START message from ESP32-CAM...', 'info');
+    log('   💡 If nothing arrives in 10s, ESP32-CAM may be offline or busy', 'warn');
+  });
+}
+
+// ── Reset ─────────────────────────────────────────
+function resetState() {
+  receiving  = false;
+  b64buffer  = '';
+  chunkCount = 0;
+  lastChunks = [];
+  clearTimeout(xferTimer);
+  stat('s-status', 'IDLE');
+  stat('s-start',  '—'); stat('s-end', '—'); stat('s-chunks', '0');
+  stat('s-buflen', '0 chars'); stat('s-imgkb', '— KB'); stat('s-time', '—');
+  ['chk-start','chk-end','chk-b64','chk-img','chk-gaps'].forEach(id => chk(id, 'pend', 'WAIT'));
+  document.getElementById('bufPreview').textContent = '—';
+  document.getElementById('chunkInspector').textContent = 'No chunks yet.';
+  document.getElementById('prog').style.width = '0%';
+}
+</script>
+</body>
+</html>
