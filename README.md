@@ -11,13 +11,6 @@ A real-time plant monitoring web dashboard that connects to your ESP32 sensor no
 | **Camera Hub** | Capture plant images via ESP32-CAM, receive via Base64 MQTT, trigger Pi AI analysis |
 | **AI Portal** | Generate a diagnosis prompt with live sensor data, open Gemini or ChatGPT |
 
-## Deploy to GitHub Pages
-
-1. Fork or clone this repo
-2. Go to **Settings → Pages**
-3. Set source to **main branch / root**
-4. Your dashboard is live at `https://yourusername.github.io/sekkito-web`
-
 > No build step required — pure HTML, CSS, and vanilla JS.
 
 ## MQTT Topics
