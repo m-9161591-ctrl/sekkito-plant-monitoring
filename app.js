@@ -5,14 +5,15 @@
 
 // ── FIREBASE CONFIG ────────────────────────────────────
 const firebaseConfig = {
-  apiKey:      "AIzaSyDAvkgNiwmXgChHsQsjlF_f8y-GCUfu8rQ",
-  databaseURL: "https://plant-monitoring-2954a-default-rtdb.asia-southeast1.firebasedatabase.app",
+  apiKey:        "AIzaSyDAvkgNiwmXgChHsQsjlF_f8y-GCUfu8rQ",
+  authDomain:    "plant-monitoring-2954a.firebaseapp.com",
+  databaseURL:   "https://plant-monitoring-2954a-default-rtdb.asia-southeast1.firebasedatabase.app",
+  projectId:     "plant-monitoring-2954a",
+  storageBucket: "plant-monitoring-2954a.firebasestorage.app",
+  appId:         "1:418029361475:web:8e080d2af7d7ac96b7f7f6",
 };
 firebase.initializeApp(firebaseConfig);
 const db = firebase.database();
-
-// RTDB REST base URL for large Base64 image fetch (no SDK size limits)
-const RTDB_REST = "https://plant-monitoring-2954a-default-rtdb.asia-southeast1.firebasedatabase.app";
 
 // ── MQTT CONFIG ────────────────────────────────────────
 const MQTT_WS_URL     = "wss://broker.hivemq.com:8884/mqtt";
