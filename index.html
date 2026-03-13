@@ -112,85 +112,91 @@
     <!-- Alert banners -->
     <div id="alertBanners"></div>
 
-    <!-- Gauges -->
+    <!-- Gauges — 5 sensors, no TDS -->
     <div class="gauge-grid">
+
+      <!-- AIR TEMP -->
       <div class="gauge-card" data-key="air_temp">
         <div class="gauge-label">AIR TEMP</div>
         <div class="gauge-wrap">
-          <svg viewBox="0 0 120 70" class="arc-svg">
-            <path class="arc-bg" d="M10,65 A55,55 0 0,1 110,65"/>
-            <path class="arc-fill" id="arc-air_temp" d="M10,65 A55,55 0 0,1 10,65" stroke="#ff7f50"/>
+          <svg viewBox="0 0 120 120" class="arc-svg">
+            <!-- background track -->
+            <path class="arc-bg" d="M25.981,110.000 A50,50 0 1,1 94.019,110.000"/>
+            <!-- fill arc -->
+            <path class="arc-fill" id="arc-air_temp" d="" stroke="#ff7f50"/>
           </svg>
-          <div class="gauge-value"><span id="val-air_temp">--</span><em>°C</em></div>
+          <div class="gauge-value">
+            <span id="val-air_temp">--</span><em>°C</em>
+          </div>
         </div>
         <div class="gauge-range">0 — 50°C</div>
         <div class="gauge-alert" id="alert-air_temp" style="display:none">⚠ OUT OF RANGE</div>
       </div>
 
+      <!-- HUMIDITY -->
       <div class="gauge-card" data-key="air_hum">
         <div class="gauge-label">HUMIDITY</div>
         <div class="gauge-wrap">
-          <svg viewBox="0 0 120 70" class="arc-svg">
-            <path class="arc-bg" d="M10,65 A55,55 0 0,1 110,65"/>
-            <path class="arc-fill" id="arc-air_hum" d="M10,65 A55,55 0 0,1 10,65" stroke="#4fc3f7"/>
+          <svg viewBox="0 0 120 120" class="arc-svg">
+            <path class="arc-bg" d="M25.981,110.000 A50,50 0 1,1 94.019,110.000"/>
+            <path class="arc-fill" id="arc-air_hum" d="" stroke="#4fc3f7"/>
           </svg>
-          <div class="gauge-value"><span id="val-air_hum">--</span><em>%</em></div>
+          <div class="gauge-value">
+            <span id="val-air_hum">--</span><em>%</em>
+          </div>
         </div>
         <div class="gauge-range">0 — 100%</div>
         <div class="gauge-alert" id="alert-air_hum" style="display:none">⚠ OUT OF RANGE</div>
       </div>
 
+      <!-- WATER TEMP -->
       <div class="gauge-card" data-key="water_temp">
         <div class="gauge-label">WATER TEMP</div>
         <div class="gauge-wrap">
-          <svg viewBox="0 0 120 70" class="arc-svg">
-            <path class="arc-bg" d="M10,65 A55,55 0 0,1 110,65"/>
-            <path class="arc-fill" id="arc-water_temp" d="M10,65 A55,55 0 0,1 10,65" stroke="#69f0ae"/>
+          <svg viewBox="0 0 120 120" class="arc-svg">
+            <path class="arc-bg" d="M25.981,110.000 A50,50 0 1,1 94.019,110.000"/>
+            <path class="arc-fill" id="arc-water_temp" d="" stroke="#69f0ae"/>
           </svg>
-          <div class="gauge-value"><span id="val-water_temp">--</span><em>°C</em></div>
+          <div class="gauge-value">
+            <span id="val-water_temp">--</span><em>°C</em>
+          </div>
         </div>
         <div class="gauge-range">0 — 50°C</div>
         <div class="gauge-alert" id="alert-water_temp" style="display:none">⚠ OUT OF RANGE</div>
       </div>
 
+      <!-- WATER LEVEL -->
       <div class="gauge-card" data-key="water_level">
         <div class="gauge-label">WATER LEVEL</div>
         <div class="gauge-wrap">
-          <svg viewBox="0 0 120 70" class="arc-svg">
-            <path class="arc-bg" d="M10,65 A55,55 0 0,1 110,65"/>
-            <path class="arc-fill" id="arc-water_level" d="M10,65 A55,55 0 0,1 10,65" stroke="#00e5ff"/>
+          <svg viewBox="0 0 120 120" class="arc-svg">
+            <path class="arc-bg" d="M25.981,110.000 A50,50 0 1,1 94.019,110.000"/>
+            <path class="arc-fill" id="arc-water_level" d="" stroke="#00e5ff"/>
           </svg>
-          <div class="gauge-value"><span id="val-water_level">--</span><em>%</em></div>
+          <div class="gauge-value">
+            <span id="val-water_level">--</span><em>%</em>
+          </div>
         </div>
         <div class="gauge-range">0 — 100%</div>
         <div class="gauge-alert" id="alert-water_level" style="display:none">⚠ LOW</div>
       </div>
 
+      <!-- LIGHT LEVEL -->
       <div class="gauge-card" data-key="light">
         <div class="gauge-label">LIGHT LEVEL</div>
         <div class="gauge-wrap">
-          <svg viewBox="0 0 120 70" class="arc-svg">
-            <path class="arc-bg" d="M10,65 A55,55 0 0,1 110,65"/>
-            <path class="arc-fill" id="arc-light" d="M10,65 A55,55 0 0,1 10,65" stroke="#ffe57f"/>
+          <svg viewBox="0 0 120 120" class="arc-svg">
+            <path class="arc-bg" d="M25.981,110.000 A50,50 0 1,1 94.019,110.000"/>
+            <path class="arc-fill" id="arc-light" d="" stroke="#ffe57f"/>
           </svg>
-          <div class="gauge-value"><span id="val-light">--</span><em>%</em></div>
+          <div class="gauge-value">
+            <span id="val-light">--</span><em>%</em>
+          </div>
         </div>
         <div class="gauge-range">0 — 100%</div>
         <div class="gauge-alert" id="alert-light" style="display:none">⚠ OUT OF RANGE</div>
       </div>
 
-      <div class="gauge-card" data-key="tds">
-        <div class="gauge-label">NUTRIENT (TDS)</div>
-        <div class="gauge-wrap">
-          <svg viewBox="0 0 120 70" class="arc-svg">
-            <path class="arc-bg" d="M10,65 A55,55 0 0,1 110,65"/>
-            <path class="arc-fill" id="arc-tds" d="M10,65 A55,55 0 0,1 10,65" stroke="#ea80ff"/>
-          </svg>
-          <div class="gauge-value"><span id="val-tds">--</span><em>ppm</em></div>
-        </div>
-        <div class="gauge-range">0 — 1000 ppm</div>
-        <div class="gauge-alert" id="alert-tds" style="display:none">⚠ OUT OF RANGE</div>
-      </div>
     </div>
 
     <!-- Grow light reminder note -->
@@ -381,7 +387,6 @@
           <div class="snap-item"><span class="snap-key">🌊 Water Temp</span><span class="snap-val" id="snap-water_temp">--</span></div>
           <div class="snap-item"><span class="snap-key">🪣 Water Level</span><span class="snap-val" id="snap-water_level">--</span></div>
           <div class="snap-item"><span class="snap-key">💡 Light</span><span class="snap-val" id="snap-light">--</span></div>
-          <div class="snap-item"><span class="snap-key">⚗️ TDS</span><span class="snap-val" id="snap-tds">--</span></div>
           <div class="snap-item"><span class="snap-key">🔆 Grow Light</span><span class="snap-val" id="snap-relay">--</span></div>
         </div>
         <div class="snapshot-footer">Check the Dashboard first to confirm readings are live</div>
