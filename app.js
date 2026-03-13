@@ -31,7 +31,6 @@ const GAUGE_CFG = {
   water_level: { min: 0, max: 100,  color: '#00e5ff', unit: '%'   },
   light:       { min: 0, max: 100,  color: '#ffe57f', unit: '%'   },
   water_temp:  { min: 0, max: 50,   color: '#69f0ae', unit: '°C'  },
-  tds:         { min: 0, max: 1000, color: '#ea80ff', unit: 'ppm' },
 };
 const KEY_MAP = {
   air_temp:    ['air_temp', 'air_temperature'],
@@ -39,7 +38,6 @@ const KEY_MAP = {
   water_level: ['water_level'],
   light:       ['light', 'light_level'],
   water_temp:  ['water_temp', 'water_temperature'],
-  tds:         ['tds', 'water_nutrient'],
 };
 
 // ── STATE ──────────────────────────────────────────────
