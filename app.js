@@ -383,7 +383,7 @@ function getVal(data, key) {
 }
 
 function arcPath(pct) {
-  const cx = 60, cy = 65, r = 50;
+  const cx = 60, cy = 65, r = 55;
   const end   = Math.PI - pct * Math.PI;
   const x     = cx + r * Math.cos(end);
   const y     = cy + r * Math.sin(end);
