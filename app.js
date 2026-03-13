@@ -383,10 +383,16 @@ function getVal(data, key) {
 }
 
 function arcPath(pct) {
-  const cx = 60, cy = 65, r = 50;
-  const end   = Math.PI - pct * Math.PI;
-  const x     = cx + r * Math.cos(end);
-  const y     = cy + r * Math.sin(end);
+  // SVG: viewBox="0 0 120 70", arc-bg = "M10,65 A55,55 0 0,1 110,65"
+  // → center is (60, 65), radius is 55
+  // The arc sweeps from the LEFT point (180°) to the RIGHT point (0°)
+  // At pct=0 → end point = start point (M10,65), arc is invisible
+  // At pct=1 → end point = (110,65), full half-circle
+  const cx = 60, cy = 65, r = 55;
+  const startAngle = Math.PI;                    // 180° = left end of arc  (10, 65)
+  const endAngle   = Math.PI - pct * Math.PI;    // sweeps clockwise toward 0° = right end (110, 65)
+  const x     = cx + r * Math.cos(endAngle);
+  const y     = cy + r * Math.sin(endAngle);
   const large = pct > 0.5 ? 1 : 0;
   return `M10,65 A${r},${r} 0 ${large},1 ${x.toFixed(2)},${y.toFixed(2)}`;
 }
