@@ -383,12 +383,12 @@ function getVal(data, key) {
 }
 
 function arcPath(pct) {
-  const cx = 60, cy = 75, r = 52;
-  const angle = Math.PI - pct * Math.PI;   // 180° → 0°  (left to right)
-  const x     = cx + r * Math.cos(angle);
-  const y     = cy + r * Math.sin(angle);
+  const cx = 60, cy = 65, r = 50;
+  const end   = Math.PI - pct * Math.PI;
+  const x     = cx + r * Math.cos(end);
+  const y     = cy + r * Math.sin(end);
   const large = pct > 0.5 ? 1 : 0;
-  return `M8,75 A${r},${r} 0 ${large},1 ${x.toFixed(3)},${y.toFixed(3)}`;
+  return `M10,65 A${r},${r} 0 ${large},1 ${x.toFixed(2)},${y.toFixed(2)}`;
 }
 
 function updateGauges(data) {
