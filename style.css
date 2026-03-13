@@ -1,5 +1,5 @@
 /* ═══════════════════════════════════════════════════════
-   SEKKITO — Style  v3.0
+   SEKKITO — Style  v3.1  (circle gauges)
    ═══════════════════════════════════════════════════════ */
 
 /* ── RESET & VARIABLES ─────────────────────────────────── */
@@ -166,24 +166,101 @@ html, body { height: 100%; background: var(--bg); color: var(--text); font-famil
 .dashboard-note { margin-top: 20px; font-size: 10px; color: var(--text-mute); line-height: 1.7; text-align: center; font-style: italic; }
 
 /* ── GAUGE GRID ────────────────────────────────────────── */
-.gauge-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(170px, 1fr)); gap: 14px; }
-.gauge-card {
-  background: var(--surface); border: 1px solid var(--border); border-radius: 16px;
-  padding: 18px 14px 12px; display: flex; flex-direction: column; align-items: center;
-  transition: border-color 0.3s, box-shadow 0.3s; position: relative;
+.gauge-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+  gap: 14px;
 }
-.gauge-card:hover { border-color: rgba(0,229,208,0.25); box-shadow: 0 0 16px rgba(0,229,208,0.05); }
-.gauge-card.alert { border-color: rgba(255,171,64,0.5); box-shadow: 0 0 12px rgba(255,171,64,0.1); }
-.gauge-label { font-family: var(--font-hud); font-size: 9px; letter-spacing: 3px; color: var(--text-mute); margin-bottom: 8px; }
-.gauge-wrap  { position: relative; width: 120px; height: 70px; }
-.arc-svg     { width: 120px; height: 70px; overflow: visible; }
-.arc-bg      { fill: none; stroke: rgba(255,255,255,0.06); stroke-width: 8; stroke-linecap: round; }
-.arc-fill    { fill: none; stroke-width: 8; stroke-linecap: round; transition: d 0.6s ease; filter: drop-shadow(0 0 4px currentColor); }
-.gauge-value { position: absolute; bottom: -4px; left: 50%; transform: translateX(-50%); text-align: center; white-space: nowrap; }
-.gauge-value span { font-family: var(--font-hud); font-size: 22px; font-weight: 700; }
-.gauge-value em   { font-size: 10px; color: var(--text-dim); font-style: normal; margin-left: 2px; }
-.gauge-range { font-size: 9px; color: var(--text-mute); margin-top: 10px; }
-.gauge-alert { font-size: 9px; color: var(--amber); font-family: var(--font-hud); margin-top: 5px; letter-spacing: 1px; animation: blink 1.5s infinite; }
+
+.gauge-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  padding: 16px 12px 14px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  transition: border-color 0.3s, box-shadow 0.3s;
+  position: relative;
+}
+.gauge-card:hover {
+  border-color: rgba(0,229,208,0.25);
+  box-shadow: 0 0 16px rgba(0,229,208,0.05);
+}
+.gauge-card.alert {
+  border-color: rgba(255,171,64,0.5);
+  box-shadow: 0 0 12px rgba(255,171,64,0.1);
+}
+
+.gauge-label {
+  font-family: var(--font-hud);
+  font-size: 9px;
+  letter-spacing: 3px;
+  color: var(--text-mute);
+  margin-bottom: 10px;
+}
+
+/* ── CIRCLE GAUGE SVG ──────────────────────────────────── */
+.gauge-wrap {
+  position: relative;
+  width: 120px;
+  height: 120px;
+}
+
+.arc-svg {
+  width: 120px;
+  height: 120px;
+  overflow: visible;
+}
+
+/* background track */
+.arc-bg {
+  fill: none;
+  stroke: rgba(255,255,255,0.06);
+  stroke-width: 9;
+  stroke-linecap: round;
+}
+
+/* colored fill arc */
+.arc-fill {
+  fill: none;
+  stroke-width: 9;
+  stroke-linecap: round;
+  /* CSS transition on SVG 'd' attribute requires motion path support;
+     we rely on JS updating it directly for now */
+  filter: drop-shadow(0 0 5px currentColor);
+}
+
+/* value label — centred inside the circle */
+.gauge-value {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-direction: column;
+  gap: 0;
+  /* shift up slightly to sit above the gap at the bottom */
+  padding-bottom: 16px;
+}
+.gauge-value span {
+  font-family: var(--font-hud);
+  font-size: 22px;
+  font-weight: 700;
+  line-height: 1;
+}
+.gauge-value em {
+  font-size: 10px;
+  color: var(--text-dim);
+  font-style: normal;
+  margin-top: 2px;
+}
+
+.gauge-range { font-size: 9px; color: var(--text-mute); margin-top: 8px; }
+.gauge-alert {
+  font-size: 9px; color: var(--amber); font-family: var(--font-hud);
+  margin-top: 5px; letter-spacing: 1px; animation: blink 1.5s infinite;
+}
 @keyframes blink { 0%,100%{opacity:1} 50%{opacity:0.4} }
 
 /* ── ANALYTICS ─────────────────────────────────────────── */
@@ -245,14 +322,6 @@ html, body { height: 100%; background: var(--bg); color: var(--text); font-famil
 
 .ai-result-badge { background: rgba(0,229,208,0.07); border: 1px solid rgba(0,229,208,0.2); border-radius: 10px; padding: 10px 14px; font-size: 11px; color: var(--teal); line-height: 1.5; }
 
-/* Debug panel */
-.debug-panel { background: rgba(0,0,0,0.55); border: 1px solid rgba(255,255,255,0.07); border-radius: 10px; padding: 10px; margin-top: 8px; max-height: 160px; overflow-y: auto; }
-.debug-title { font-size: 8px; letter-spacing: 2px; color: var(--text-mute); margin-bottom: 6px; font-family: var(--font-hud); }
-.dbline      { font-size: 9px; color: var(--text-dim); font-family: monospace; margin-bottom: 2px; line-height: 1.4; word-break: break-all; }
-.dbline.err  { color: var(--red); }
-.dbline.ok   { color: var(--green); }
-.dbline.warn { color: var(--amber); }
-
 /* ── AI PORTAL ─────────────────────────────────────────── */
 .ai-layout { display: grid; grid-template-columns: 1fr 290px; gap: 28px; }
 .field-label { display: block; font-family: var(--font-hud); font-size: 9px; letter-spacing: 2px; color: var(--teal); margin-bottom: 6px; margin-top: 14px; }
@@ -293,7 +362,6 @@ html, body { height: 100%; background: var(--bg); color: var(--text); font-famil
 .log-snap-icon  { font-size: 20px; }
 .log-snap-val   { font-family: var(--font-hud); font-size: 11px; color: var(--teal); }
 
-/* Notepad-style input */
 .log-notepad {
   background: var(--surface); border: 1px solid var(--border);
   border-radius: 14px; overflow: hidden; margin-bottom: 16px;
@@ -314,7 +382,6 @@ html, body { height: 100%; background: var(--bg); color: var(--text); font-famil
 .log-char-count { font-size: 10px; color: var(--text-mute); font-family: var(--font-mono); }
 .log-notepad-footer .ctrl-btn { padding: 8px 18px; font-size: 10px; }
 
-/* Entries */
 .log-entries { display: flex; flex-direction: column; gap: 10px; }
 .log-empty   { text-align: center; padding: 50px 20px; color: var(--text-mute); }
 .log-empty-icon { font-size: 40px; margin-bottom: 10px; }
@@ -341,7 +408,6 @@ html, body { height: 100%; background: var(--bg); color: var(--text); font-famil
 .settings-row-sub   { font-size: 11px; color: var(--text-mute); margin-top: 2px; }
 .settings-divider   { height: 1px; background: var(--border); }
 
-/* Toggle switch */
 .toggle-switch { position: relative; display: inline-block; width: 44px; height: 24px; flex-shrink: 0; }
 .toggle-switch input { opacity: 0; width: 0; height: 0; }
 .toggle-slider { position: absolute; cursor: pointer; inset: 0; background: rgba(255,255,255,0.1); border-radius: 24px; transition: background 0.3s; }
@@ -349,7 +415,6 @@ html, body { height: 100%; background: var(--bg); color: var(--text); font-famil
 .toggle-switch input:checked + .toggle-slider { background: rgba(0,229,208,0.3); }
 .toggle-switch input:checked + .toggle-slider::before { transform: translateX(20px); background: var(--teal); }
 
-/* Threshold rows */
 .thr-row    { display: flex; align-items: center; gap: 12px; padding: 12px 0; }
 .thr-label  { font-size: 11px; color: var(--text-dim); width: 130px; flex-shrink: 0; }
 .thr-inputs { display: flex; gap: 8px; flex: 1; }
