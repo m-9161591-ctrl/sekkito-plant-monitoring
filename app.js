@@ -382,13 +382,43 @@ function getVal(data, key) {
   return null;
 }
 
+// ── FULL CIRCLE ARC PATH ───────────────────────────────
+// Circle: cx=60, cy=60, r=50. Starts at top (12 o'clock), sweeps clockwise.
+// A small gap is left at the bottom (300° sweep instead of 360°) so it looks
+// like a "dial" rather than a completely closed ring.
+const CIRCLE_CX = 60, CIRCLE_CY = 60, CIRCLE_R = 50;
+const GAP_DEG   = 60;                    // degrees of gap at the bottom
+const START_DEG = 90 + GAP_DEG / 2;     // 120° (bottom-left)
+const SWEEP_DEG = 360 - GAP_DEG;        // 300°
+
+function degToRad(d) { return d * Math.PI / 180; }
+
 function arcPath(pct) {
-  const cx = 60, cy = 65, r = 55;
-  const end   = Math.PI - pct * Math.PI;
-  const x     = cx + r * Math.cos(end);
-  const y     = cy + r * Math.sin(end);
-  const large = pct > 0.5 ? 1 : 0;
-  return `M10,65 A${r},${r} 0 ${large},1 ${x.toFixed(2)},${y.toFixed(2)}`;
+  if (pct <= 0) return '';
+  const clampedPct = Math.min(pct, 0.9999);
+  const sweepAngle = clampedPct * SWEEP_DEG;
+
+  const startRad = degToRad(START_DEG);
+  const endRad   = degToRad(START_DEG + sweepAngle);
+
+  const x1 = CIRCLE_CX + CIRCLE_R * Math.cos(startRad);
+  const y1 = CIRCLE_CY + CIRCLE_R * Math.sin(startRad);
+  const x2 = CIRCLE_CX + CIRCLE_R * Math.cos(endRad);
+  const y2 = CIRCLE_CY + CIRCLE_R * Math.sin(endRad);
+
+  const largeArc = sweepAngle > 180 ? 1 : 0;
+
+  return `M${x1.toFixed(3)},${y1.toFixed(3)} A${CIRCLE_R},${CIRCLE_R} 0 ${largeArc},1 ${x2.toFixed(3)},${y2.toFixed(3)}`;
+}
+
+function bgArcPath() {
+  const startRad = degToRad(START_DEG);
+  const endRad   = degToRad(START_DEG + SWEEP_DEG * 0.9999);
+  const x1 = CIRCLE_CX + CIRCLE_R * Math.cos(startRad);
+  const y1 = CIRCLE_CY + CIRCLE_R * Math.sin(startRad);
+  const x2 = CIRCLE_CX + CIRCLE_R * Math.cos(endRad);
+  const y2 = CIRCLE_CY + CIRCLE_R * Math.sin(endRad);
+  return `M${x1.toFixed(3)},${y1.toFixed(3)} A${CIRCLE_R},${CIRCLE_R} 0 1,1 ${x2.toFixed(3)},${y2.toFixed(3)}`;
 }
 
 function updateGauges(data) {
@@ -398,7 +428,7 @@ function updateGauges(data) {
     const pct   = Math.max(0, Math.min(1, (val - cfg.min) / (cfg.max - cfg.min)));
     const arcEl = document.getElementById(`arc-${key}`);
     const valEl = document.getElementById(`val-${key}`);
-    if (arcEl) arcEl.setAttribute('d', pct > 0.005 ? arcPath(pct) : 'M10,65 A50,50 0 0,1 10,65');
+    if (arcEl) arcEl.setAttribute('d', pct > 0.001 ? arcPath(pct) : '');
     if (valEl) valEl.textContent = val.toFixed(1);
     const thr     = THRESHOLDS[key];
     const alertEl = document.getElementById(`alert-${key}`);
@@ -584,7 +614,6 @@ LIVE SENSOR DATA (SEKKITO):
 - Water Temperature:     ${f('water_temp')}°C
 - Water Level:           ${f('water_level')}%
 - Light Intensity:       ${f('light')}%
-- Nutrient TDS:          ${f('tds')} PPM
 - Grow Light:            ${relayLine}
 
 INSTRUCTIONS:
