@@ -179,20 +179,6 @@
         <div class="gauge-alert" id="alert-light" style="display:none">⚠ OUT OF RANGE</div>
       </div>
 
-      <div class="gauge-card" data-key="tds">
-        <div class="gauge-label">NUTRIENT (TDS)</div>
-        <div class="gauge-wrap">
-          <svg viewBox="0 0 120 70" class="arc-svg">
-            <path class="arc-bg" d="M10,65 A55,55 0 0,1 110,65"/>
-            <path class="arc-fill" id="arc-tds" d="M10,65 A55,55 0 0,1 10,65" stroke="#ea80ff"/>
-          </svg>
-          <div class="gauge-value"><span id="val-tds">--</span><em>ppm</em></div>
-        </div>
-        <div class="gauge-range">0 — 1000 ppm</div>
-        <div class="gauge-alert" id="alert-tds" style="display:none">⚠ OUT OF RANGE</div>
-      </div>
-    </div>
-
     <!-- Grow light reminder note -->
     <p class="dashboard-note">
       The automatic light operates during 8:00 AM – 12:00 PM. During midnight the light is forced off to prevent overstressing the plant. The light will be forced ON if connection to the MQTT broker is lost or sensor readings are not received for a certain period. This is a safety measure to ensure the plant continues to receive light even if there are connectivity issues.
@@ -381,7 +367,6 @@
           <div class="snap-item"><span class="snap-key">🌊 Water Temp</span><span class="snap-val" id="snap-water_temp">--</span></div>
           <div class="snap-item"><span class="snap-key">🪣 Water Level</span><span class="snap-val" id="snap-water_level">--</span></div>
           <div class="snap-item"><span class="snap-key">💡 Light</span><span class="snap-val" id="snap-light">--</span></div>
-          <div class="snap-item"><span class="snap-key">⚗️ TDS</span><span class="snap-val" id="snap-tds">--</span></div>
           <div class="snap-item"><span class="snap-key">🔆 Grow Light</span><span class="snap-val" id="snap-relay">--</span></div>
         </div>
         <div class="snapshot-footer">Check the Dashboard first to confirm readings are live</div>
