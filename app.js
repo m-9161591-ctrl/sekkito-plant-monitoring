@@ -593,12 +593,24 @@ function updateRelayCard(d) {
 function wireForceLight() {
   document.getElementById('forceLightBtn')?.addEventListener('click', showForcePicker);
   document.getElementById('abortForceBtn')?.addEventListener('click', abortForce);
-  // Close picker/warning modals on overlay click
+
+  // Wire modal buttons via JS (more reliable than inline onclick in some deployments)
+  document.getElementById('forcePickerCancelBtn')?.addEventListener('click', hideForcePicker);
+  document.getElementById('forcePickerConfirmBtn')?.addEventListener('click', confirmForceOn);
+  document.getElementById('forceWarningCancelBtn')?.addEventListener('click', cancelForceWarning);
+  document.getElementById('forceWarningConfirmBtn')?.addEventListener('click', confirmForceWarning);
+  document.getElementById('abortCancelBtn')?.addEventListener('click', cancelAbort);
+  document.getElementById('abortConfirmBtn')?.addEventListener('click', confirmAbort);
+
+  // Also keep inline onclick as fallback — close picker/warning modals on overlay click
   document.getElementById('forceLightModal')?.addEventListener('click', e => {
     if (e.target.id === 'forceLightModal') hideForcePicker();
   });
   document.getElementById('forceWarningModal')?.addEventListener('click', e => {
     if (e.target.id === 'forceWarningModal') cancelForceWarning();
+  });
+  document.getElementById('abortConfirmModal')?.addEventListener('click', e => {
+    if (e.target.id === 'abortConfirmModal') cancelAbort();
   });
 }
 
@@ -1143,24 +1155,24 @@ function wireProfileSettings() {
   document.getElementById('addProfileBtn')?.addEventListener('click', () => {
     const name = document.getElementById('newProfileName')?.value.trim();
     if (!name) return;
-    const id = 'plant_' + Date.now();
+    const profileId = 'plant_' + Date.now();   // renamed from 'id' to avoid clash below
     const newP = {
       ...DEFAULT_PROFILE,
-      id,
+      id:           profileId,
       name,
-      emoji:        document.getElementById('newProfileEmoji')?.value.trim()  || '🌿',
-      mqttBroker:   document.getElementById('newProfileBroker')?.value.trim() || DEFAULT_PROFILE.mqttBroker,
-      mqttPort:     parseInt(document.getElementById('newProfilePort')?.value) || DEFAULT_PROFILE.mqttPort,
-      topicPrefix:  document.getElementById('newProfilePrefix')?.value.trim() || `esp32/sekkito/${id}`,
-      camPrefix:    document.getElementById('newProfileCamPrefix')?.value.trim() || `esp32cam/sekkito/${id}`,
-      firebasePath: document.getElementById('newProfileFirebase')?.value.trim() || 'history',
+      emoji:        document.getElementById('newProfileEmoji')?.value.trim()     || '🌿',
+      mqttBroker:   document.getElementById('newProfileBroker')?.value.trim()    || DEFAULT_PROFILE.mqttBroker,
+      mqttPort:     parseInt(document.getElementById('newProfilePort')?.value)    || DEFAULT_PROFILE.mqttPort,
+      topicPrefix:  document.getElementById('newProfilePrefix')?.value.trim()    || `esp32/sekkito/${profileId}`,
+      camPrefix:    document.getElementById('newProfileCamPrefix')?.value.trim() || `esp32cam/sekkito/${profileId}`,
+      firebasePath: document.getElementById('newProfileFirebase')?.value.trim()  || 'history',
     };
     profiles.push(newP);
     saveProfiles();
-    // Clear inputs
+    // Clear inputs — use 'inputId' to avoid shadowing profileId
     ['newProfileName','newProfileEmoji','newProfileBroker','newProfilePort',
-     'newProfilePrefix','newProfileCamPrefix','newProfileFirebase'].forEach(id => {
-      const el = document.getElementById(id);
+     'newProfilePrefix','newProfileCamPrefix','newProfileFirebase'].forEach(inputId => {
+      const el = document.getElementById(inputId);
       if (el) el.value = '';
     });
     renderProfileSwitcher();

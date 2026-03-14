@@ -672,8 +672,8 @@
     <div class="force-picker-preview" id="forcePickerPreview">1h 0m</div>
 
     <div class="force-modal-actions">
-      <button class="modal-dismiss" onclick="hideForcePicker()">CANCEL</button>
-      <button class="ctrl-btn primary" onclick="confirmForceOn()"
+      <button class="modal-dismiss" id="forcePickerCancelBtn">CANCEL</button>
+      <button class="ctrl-btn primary" id="forcePickerConfirmBtn"
         style="flex:1;border-radius:30px;font-family:var(--font-hud);font-size:11px;letter-spacing:2px">
         CONFIRM
       </button>
@@ -692,8 +692,8 @@
       Some plants require darkness to complete their growth cycle properly.
     </div>
     <div class="force-modal-actions">
-      <button class="modal-dismiss" onclick="cancelForceWarning()">CANCEL</button>
-      <button class="ctrl-btn" onclick="confirmForceWarning()"
+      <button class="modal-dismiss" id="forceWarningCancelBtn">CANCEL</button>
+      <button class="ctrl-btn" id="forceWarningConfirmBtn"
         style="flex:1;background:var(--amber);color:#000;border-radius:30px;
                font-family:var(--font-hud);font-size:10px;letter-spacing:1px;
                padding:10px;border:none;cursor:pointer;font-weight:700">
@@ -712,8 +712,8 @@
       The grow light will return to its automatic schedule immediately.
     </div>
     <div class="force-modal-actions">
-      <button class="modal-dismiss" onclick="cancelAbort()">KEEP ON</button>
-      <button class="ctrl-btn" onclick="confirmAbort()"
+      <button class="modal-dismiss" id="abortCancelBtn">KEEP ON</button>
+      <button class="ctrl-btn" id="abortConfirmBtn"
         style="flex:1;background:var(--red);color:#fff;border-radius:30px;
                font-family:var(--font-hud);font-size:11px;letter-spacing:1px;
                padding:10px;border:none;cursor:pointer;font-weight:700">
