@@ -269,7 +269,21 @@ html, body { height: 100%; background: var(--bg); color: var(--text); font-famil
 .chip:hover  { color: var(--text); border-color: var(--teal); }
 .chip.active { background: var(--teal-dim); color: var(--teal); border-color: var(--teal); }
 .charts-list { display: flex; flex-direction: column; gap: 18px; }
-.chart-card  { background: var(--surface); border: 1px solid var(--border); border-radius: 16px; padding: 20px; height: 200px; }
+.chart-card  {
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: 16px; padding: 14px 16px 12px; overflow: hidden;
+}
+.chart-header {
+  display: flex; align-items: baseline; justify-content: space-between;
+  flex-wrap: wrap; gap: 6px; margin-bottom: 10px;
+}
+.chart-title {
+  font-family: var(--font-hud); font-size: 10px; letter-spacing: 2px; font-weight: 700;
+}
+.chart-stats {
+  font-size: 9px; color: var(--text-mute); font-family: var(--font-mono); letter-spacing: 0;
+}
+.chart-canvas-wrap { height: 180px; position: relative; }
 
 /* ── CAMERA ────────────────────────────────────────────── */
 .cam-status-badge { font-family: var(--font-hud); font-size: 10px; letter-spacing: 2px; color: var(--teal); border: 1px solid var(--teal-bd); padding: 4px 12px; border-radius: 20px; background: var(--teal-dim); max-width: 400px; word-break: break-word; }
@@ -471,3 +485,340 @@ input[type=number]::-webkit-outer-spin-button { opacity: 0.4; }
   .gauge-grid { grid-template-columns: 1fr 1fr; }
   .main       { padding: 80px 14px 40px; }
 }
+
+/* ═══════════════════════════════════════════════════════
+   FORCE LIGHT additions
+   ═══════════════════════════════════════════════════════ */
+
+/* ── Force badge & relay card state ─────────────────────── */
+.relay-badge.force {
+  color: var(--teal);
+  border-color: rgba(0,229,208,0.4);
+  background: rgba(0,229,208,0.10);
+  animation: blink 1.5s infinite;
+}
+.relay-card.force {
+  border-color: rgba(0,229,208,0.4);
+  background: rgba(0,229,208,0.04);
+}
+
+/* ── Force countdown strip ───────────────────────────────── */
+.force-countdown {
+  font-family: var(--font-hud);
+  font-size: 11px;
+  color: var(--teal);
+  letter-spacing: 1px;
+  margin: 8px 0 4px;
+  min-height: 16px;
+}
+
+/* ── Force ON / Abort button sections ────────────────────── */
+.force-on-section,
+.abort-section {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-top: 12px;
+}
+
+.force-btn {
+  background: var(--teal);
+  color: #000;
+  font-weight: 700;
+  width: 100%;
+  justify-content: center;
+}
+.force-btn:hover { box-shadow: 0 0 18px rgba(0,229,208,0.45); }
+
+.abort-btn {
+  background: var(--red);
+  color: #fff;
+  font-weight: 700;
+  width: 100%;
+  justify-content: center;
+}
+.abort-btn:hover { box-shadow: 0 0 18px rgba(255,83,112,0.4); }
+
+/* ── Duration picker modal ───────────────────────────────── */
+.force-modal { width: min(380px, 92vw); }
+
+.force-picker-row {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  margin: 20px 0 10px;
+}
+
+.force-picker-col {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+}
+
+.force-picker-label {
+  font-family: var(--font-hud);
+  font-size: 8px;
+  letter-spacing: 2px;
+  color: var(--text-mute);
+}
+
+.force-picker-sep {
+  font-family: var(--font-hud);
+  font-size: 28px;
+  font-weight: 700;
+  color: var(--text-dim);
+  padding-top: 20px;
+}
+
+.force-scroll-wrap {
+  position: relative;
+  width: 80px;
+  height: 160px;
+  border-radius: 12px;
+  overflow: hidden;
+  background: var(--surface);
+  border: 1px solid var(--border);
+}
+
+.force-scroll-highlight {
+  position: absolute;
+  top: 50%;
+  left: 0; right: 0;
+  height: 40px;
+  transform: translateY(-50%);
+  background: rgba(0,229,208,0.10);
+  border-top: 1px solid rgba(0,229,208,0.25);
+  border-bottom: 1px solid rgba(0,229,208,0.25);
+  pointer-events: none;
+  z-index: 1;
+}
+
+.force-scroll-select {
+  width: 100%;
+  height: 100%;
+  background: transparent;
+  border: none;
+  outline: none;
+  color: var(--text);
+  font-family: var(--font-hud);
+  font-size: 18px;
+  text-align: center;
+  cursor: pointer;
+  padding: 0;
+  overflow-y: scroll;
+  scrollbar-width: none;
+}
+.force-scroll-select::-webkit-scrollbar { display: none; }
+.force-scroll-select option {
+  background: var(--surface);
+  color: var(--text-dim);
+  font-size: 18px;
+  padding: 8px 0;
+  text-align: center;
+}
+.force-scroll-select option:checked {
+  color: var(--teal);
+  font-weight: bold;
+  background: rgba(0,229,208,0.08);
+}
+
+.force-picker-preview {
+  font-family: var(--font-hud);
+  font-size: 14px;
+  color: var(--teal);
+  margin: 8px 0 20px;
+  text-align: center;
+  letter-spacing: 1px;
+}
+
+.force-modal-actions {
+  display: flex;
+  gap: 12px;
+  width: 100%;
+  align-items: center;
+  margin-top: 4px;
+}
+
+/* ── Warning modal ───────────────────────────────────────── */
+.force-warn-modal { width: min(400px, 92vw); }
+
+.force-warn-body {
+  background: rgba(255,171,64,0.07);
+  border: 1px solid rgba(255,171,64,0.3);
+  border-radius: 10px;
+  padding: 12px 14px;
+  font-size: 12px;
+  color: var(--amber);
+  line-height: 1.6;
+  margin: 12px 0 20px;
+  text-align: left;
+}
+
+/* ── Relay card needs more vertical space for force controls ── */
+.relay-card { align-items: flex-start; }
+.relay-info  { width: 100%; }
+
+/* ═══════════════════════════════════════════════════════
+   PROFILE SYSTEM
+   ═══════════════════════════════════════════════════════ */
+
+/* ── Sidebar profile switcher ────────────────────────── */
+.profile-switcher-wrap {
+  padding: 12px 14px 8px;
+  border-top: 1px solid var(--border);
+  margin-top: 4px;
+}
+.profile-switcher-label {
+  font-family: var(--font-hud);
+  font-size: 8px;
+  letter-spacing: 2px;
+  color: var(--text-mute);
+  margin-bottom: 8px;
+}
+.profile-switcher {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+.profile-chip {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 10px;
+  border-radius: 10px;
+  cursor: pointer;
+  border: 1px solid var(--border);
+  background: transparent;
+  transition: all 0.2s;
+  user-select: none;
+}
+.profile-chip:hover { background: var(--teal-dim); border-color: var(--teal-bd); }
+.profile-chip.active {
+  background: var(--teal-dim);
+  border-color: var(--teal-bd);
+  box-shadow: 0 0 10px rgba(0,229,208,0.08);
+}
+.profile-chip-emoji { font-size: 16px; line-height: 1; }
+.profile-chip-name {
+  font-family: var(--font-hud);
+  font-size: 10px;
+  letter-spacing: 1px;
+  color: var(--text-dim);
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.profile-chip.active .profile-chip-name { color: var(--teal); }
+
+/* ── Active profile badge on dashboard ───────────────── */
+.active-profile-badge {
+  font-family: var(--font-hud);
+  font-size: 10px;
+  letter-spacing: 1.5px;
+  color: var(--teal);
+  margin-bottom: 14px;
+  padding: 4px 12px;
+  background: var(--teal-dim);
+  border: 1px solid var(--teal-bd);
+  border-radius: 20px;
+  display: inline-block;
+}
+
+/* ── Settings profile list ───────────────────────────── */
+.profile-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 11px 14px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  margin-bottom: 8px;
+  flex-wrap: wrap;
+}
+.profile-row.active { border-color: var(--teal-bd); background: var(--teal-dim); }
+.profile-row-emoji  { font-size: 20px; flex-shrink: 0; }
+.profile-row-name {
+  font-family: var(--font-hud);
+  font-size: 11px;
+  color: var(--text);
+  flex: 1;
+  min-width: 80px;
+}
+.profile-row-broker {
+  font-size: 9px;
+  color: var(--text-mute);
+  font-family: var(--font-mono);
+  flex: 2;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.profile-row-actions { display: flex; gap: 6px; align-items: center; flex-shrink: 0; }
+
+.profile-action-btn {
+  padding: 4px 12px;
+  border-radius: 8px;
+  border: none;
+  font-family: var(--font-hud);
+  font-size: 9px;
+  letter-spacing: 1px;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+.profile-action-btn.select {
+  background: var(--teal);
+  color: #000;
+  font-weight: 700;
+}
+.profile-action-btn.select:hover { box-shadow: 0 0 10px rgba(0,229,208,0.4); }
+.profile-action-btn.delete {
+  background: rgba(255,83,112,0.12);
+  color: var(--red);
+  border: 1px solid rgba(255,83,112,0.25);
+}
+.profile-action-btn.delete:hover { background: rgba(255,83,112,0.22); }
+
+.profile-active-badge {
+  font-family: var(--font-hud);
+  font-size: 9px;
+  letter-spacing: 1px;
+  color: var(--teal);
+  padding: 3px 10px;
+  border: 1px solid var(--teal-bd);
+  border-radius: 8px;
+}
+
+/* ── MQTT settings field rows ────────────────────────── */
+.mqtt-field-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 0;
+  flex-wrap: wrap;
+}
+.mqtt-field-label {
+  font-size: 10px;
+  color: var(--text-dim);
+  width: 100px;
+  flex-shrink: 0;
+  font-family: var(--font-mono);
+}
+.mqtt-input {
+  flex: 1;
+  min-width: 120px;
+  font-size: 11px !important;
+}
+.mqtt-input.wide { flex: 3; }
+.emoji-input { flex: 0 0 52px !important; min-width: 52px !important; text-align: center; font-size: 16px !important; }
+
+/* Light theme adjustments */
+:root.light-theme .profile-chip         { background: #fff; }
+:root.light-theme .profile-chip:hover   { background: var(--teal-dim); }
+:root.light-theme .profile-chip.active  { background: var(--teal-dim); }
+:root.light-theme .profile-row          { background: #fff; }
+:root.light-theme .profile-row.active   { background: var(--teal-dim); }
+

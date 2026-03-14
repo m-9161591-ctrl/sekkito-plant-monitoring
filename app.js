@@ -1,6 +1,6 @@
 // ═══════════════════════════════════════════════════════
-//  SEKKITO — Plant Intelligence Dashboard  v3.0
-//  app.js  — mirrors Flutter app (6 pages)
+//  SEKKITO — Plant Intelligence Dashboard  v3.1
+//  app.js  — circle gauges + force light
 // ═══════════════════════════════════════════════════════
 
 // ── FIREBASE CONFIG ────────────────────────────────────
@@ -15,22 +15,86 @@ const firebaseConfig = {
 firebase.initializeApp(firebaseConfig);
 const db = firebase.database();
 
-// ── MQTT CONFIG ────────────────────────────────────────
-const MQTT_WS_URL     = "wss://broker.hivemq.com:8884/mqtt";
-const TOPIC_SENSORS   = "esp32/sekkito/plant123/sensors";
-const TOPIC_RELAY     = "esp32/sekkito/plant123/relay_status";
-const TOPIC_CAPTURE   = "esp32cam/sekkito/plant123/capture";
-const TOPIC_IMAGE     = "esp32cam/sekkito/plant123/imagePlant";  // chunked Base64 stream
-const TOPIC_STATUS    = "esp32cam/sekkito/plant123/status";
-const TOPIC_AI_RESULT = "esp32cam/sekkito/plant123/aiResult";
+// ════════════════════════════════════════════════════════
+//  PROFILE SYSTEM
+//  Each profile stores its own MQTT broker + topic prefix.
+//  Switching profile reconnects MQTT and reloads charts.
+// ════════════════════════════════════════════════════════
+
+const DEFAULT_PROFILE = {
+  id:           'plant123',
+  name:         'Plant #1',
+  emoji:        '🌱',
+  mqttBroker:   'broker.hivemq.com',
+  mqttPort:     8884,          // WebSocket SSL port
+  topicPrefix:  'esp32/sekkito/plant123',
+  camPrefix:    'esp32cam/sekkito/plant123',
+  firebasePath: 'history',     // Firebase RTDB path for this plant's history
+};
+
+let profiles       = [];   // array of profile objects
+let activeProfile  = null; // currently selected profile
+
+function loadProfiles() {
+  try {
+    const raw = localStorage.getItem('sekkito_profiles');
+    if (raw) {
+      profiles = JSON.parse(raw);
+    }
+  } catch(e) {}
+  // Always ensure at least the default profile exists
+  if (profiles.length === 0) profiles = [{ ...DEFAULT_PROFILE }];
+
+  // Load active profile id
+  let activeId = null;
+  try { activeId = localStorage.getItem('sekkito_active_profile'); } catch(e) {}
+  activeProfile = profiles.find(p => p.id === activeId) || profiles[0];
+}
+
+function saveProfiles() {
+  localStorage.setItem('sekkito_profiles', JSON.stringify(profiles));
+  localStorage.setItem('sekkito_active_profile', activeProfile.id);
+}
+
+function switchProfile(id) {
+  const p = profiles.find(p => p.id === id);
+  if (!p || p.id === activeProfile.id) return;
+  activeProfile = p;
+  saveProfiles();
+  // Reconnect MQTT with new topics
+  if (mqttClient) { mqttClient.end(true); mqttClient = null; }
+  connectMQTT();
+  // Reload charts for the new Firebase path
+  loadCharts();
+  renderProfileSwitcher();
+  updateActiveProfileUI();
+}
+
+// Derive topics from the active profile
+function topics() {
+  const p = activeProfile;
+  return {
+    SENSORS:   `${p.topicPrefix}/sensors`,
+    RELAY:     `${p.topicPrefix}/relay_status`,
+    FORCE:     `${p.topicPrefix}/force_light`,
+    CAPTURE:   `${p.camPrefix}/capture`,
+    IMAGE:     `${p.camPrefix}/imagePlant`,
+    STATUS:    `${p.camPrefix}/status`,
+    AI_RESULT: `${p.camPrefix}/aiResult`,
+  };
+}
+
+function mqttWsUrl() {
+  return `wss://${activeProfile.mqttBroker}:${activeProfile.mqttPort}/mqtt`;
+}
 
 // ── GAUGE CONFIG ───────────────────────────────────────
 const GAUGE_CFG = {
-  air_temp:    { min: 0, max: 50,   color: '#ff7f50', unit: '°C'  },
-  air_hum:     { min: 0, max: 100,  color: '#4fc3f7', unit: '%'   },
-  water_level: { min: 0, max: 100,  color: '#00e5ff', unit: '%'   },
-  light:       { min: 0, max: 100,  color: '#ffe57f', unit: '%'   },
-  water_temp:  { min: 0, max: 50,   color: '#69f0ae', unit: '°C'  },
+  air_temp:    { min: 0, max: 50,   color: '#ff7f50', unit: '°C' },
+  air_hum:     { min: 0, max: 100,  color: '#4fc3f7', unit: '%'  },
+  water_level: { min: 0, max: 100,  color: '#00e5ff', unit: '%'  },
+  light:       { min: 0, max: 100,  color: '#ffe57f', unit: '%'  },
+  water_temp:  { min: 0, max: 50,   color: '#69f0ae', unit: '°C' },
 };
 const KEY_MAP = {
   air_temp:    ['air_temp', 'air_temperature'],
@@ -48,8 +112,13 @@ let base64Buffer     = "";
 let isReceivingImage = false;
 let imageDataUrl     = null;
 let imageTimeout     = null;
-let imageHistory     = [];   // max 5 data URLs
-let historyIndex     = -1;   // -1 = show latest
+let imageHistory     = [];
+let historyIndex     = -1;
+
+// Force-light state
+let forceActive    = false;
+let forceEndTime   = null;
+let forceTimer     = null;
 
 let THRESHOLDS = {
   air_temp:    { min: 18, max: 35  },
@@ -58,8 +127,8 @@ let THRESHOLDS = {
   light:       { min: 10, max: 100 },
   water_temp:  { min: 15, max: 30  },
 };
-let appSettings = { isDarkTheme: true, showGuides: true };
-let plantLog    = [];   // [{ timestamp, note }]
+let appSettings    = { isDarkTheme: true, showGuides: true };
+let plantLog       = [];
 let chartInstances = {};
 let selectedRange  = 3600000;
 
@@ -67,6 +136,7 @@ let selectedRange  = 3600000;
 //  BOOT
 // ══════════════════════════════════════════════════════════
 document.addEventListener('DOMContentLoaded', () => {
+  loadProfiles();
   loadPersistedData();
   applyTheme();
   applyGuideVisibility();
@@ -76,25 +146,19 @@ document.addEventListener('DOMContentLoaded', () => {
   wireCamera();
   wireCopyPrompt();
   wireLogPage();
+  wireForceLight();
+  wireProfileSettings();
+  populateForcePickers();
+  renderProfileSwitcher();
+  updateActiveProfileUI();
   connectMQTT();
 });
 
 // ── PERSISTENCE ────────────────────────────────────────
 function loadPersistedData() {
-  try {
-    const s = localStorage.getItem('sekkito_settings');
-    if (s) appSettings = { ...appSettings, ...JSON.parse(s) };
-  } catch(e) {}
-  try {
-    const t = localStorage.getItem('sekkito_thresholds');
-    if (t) THRESHOLDS = { ...THRESHOLDS, ...JSON.parse(t) };
-  } catch(e) {}
-  try {
-    const l = localStorage.getItem('sekkito_plant_log');
-    if (l) plantLog = JSON.parse(l);
-  } catch(e) {}
-
-  // Populate settings inputs
+  try { const s = localStorage.getItem('sekkito_settings');   if (s) appSettings = { ...appSettings, ...JSON.parse(s) }; } catch(e) {}
+  try { const t = localStorage.getItem('sekkito_thresholds'); if (t) THRESHOLDS  = { ...THRESHOLDS,  ...JSON.parse(t) }; } catch(e) {}
+  try { const l = localStorage.getItem('sekkito_plant_log');  if (l) plantLog     = JSON.parse(l); } catch(e) {}
   const keys = ['air_temp','air_hum','water_level','light','water_temp'];
   keys.forEach(k => {
     const minEl = document.getElementById(`thr-${k}-min`);
@@ -103,10 +167,9 @@ function loadPersistedData() {
     if (maxEl) maxEl.value = THRESHOLDS[k].max;
   });
 }
-
-function saveSettings() { localStorage.setItem('sekkito_settings', JSON.stringify(appSettings)); }
-function saveThresholds() { localStorage.setItem('sekkito_thresholds', JSON.stringify(THRESHOLDS)); }
-function savePlantLog()   { localStorage.setItem('sekkito_plant_log',  JSON.stringify(plantLog)); }
+function saveSettings()  { localStorage.setItem('sekkito_settings',   JSON.stringify(appSettings)); }
+function saveThresholds(){ localStorage.setItem('sekkito_thresholds',  JSON.stringify(THRESHOLDS)); }
+function savePlantLog()  { localStorage.setItem('sekkito_plant_log',   JSON.stringify(plantLog)); }
 
 // ── THEME ──────────────────────────────────────────────
 function applyTheme() {
@@ -116,7 +179,6 @@ function applyTheme() {
   const tog = document.getElementById('themeToggle');
   if (tog) tog.checked = appSettings.isDarkTheme;
 }
-
 function applyGuideVisibility() {
   document.querySelectorAll('.guide-card').forEach(el => {
     el.style.display = appSettings.showGuides ? '' : 'none';
@@ -156,16 +218,12 @@ function wireNavigation() {
 function wireSettings() {
   document.getElementById('themeToggle')?.addEventListener('change', e => {
     appSettings.isDarkTheme = e.target.checked;
-    saveSettings();
-    applyTheme();
+    saveSettings(); applyTheme();
   });
-
   document.getElementById('guidesToggle')?.addEventListener('change', e => {
     appSettings.showGuides = e.target.checked;
-    saveSettings();
-    applyGuideVisibility();
+    saveSettings(); applyGuideVisibility();
   });
-
   document.getElementById('saveThrBtn')?.addEventListener('click', () => {
     const keys = ['air_temp','air_hum','water_level','light','water_temp'];
     keys.forEach(k => {
@@ -184,11 +242,15 @@ function wireSettings() {
 //  MQTT
 // ══════════════════════════════════════════════════════════
 function connectMQTT() {
+  const T = topics();
   const clientId = `sekkito_web_${Date.now()}`;
-  mqttClient = mqtt.connect(MQTT_WS_URL, {
+  mqttClient = mqtt.connect(mqttWsUrl(), {
     clientId, keepalive: 20, reconnectPeriod: 3000, connectTimeout: 10000,
   });
-  mqttClient.on('connect',    () => { setStatus(true,  'Receiving ESP32 data'); mqttClient.subscribe([TOPIC_SENSORS, TOPIC_RELAY, TOPIC_IMAGE, TOPIC_STATUS, TOPIC_AI_RESULT]); });
+  mqttClient.on('connect', () => {
+    setStatus(true, `${activeProfile.emoji} ${activeProfile.name} — receiving data`);
+    mqttClient.subscribe([T.SENSORS, T.RELAY, T.IMAGE, T.STATUS, T.AI_RESULT, T.FORCE]);
+  });
   mqttClient.on('disconnect', () => setStatus(false, 'Disconnected — retrying'));
   mqttClient.on('error',      () => setStatus(false, 'Connection error'));
   mqttClient.on('offline',    () => setStatus(false, 'Broker offline — retrying'));
@@ -206,7 +268,8 @@ function setStatus(online, hint = '') {
 }
 
 function handleMessage(topic, str) {
-  if (topic === TOPIC_SENSORS) {
+  const T = topics();
+  if (topic === T.SENSORS) {
     try {
       const data = JSON.parse(str);
       sensorData = data;
@@ -215,21 +278,20 @@ function handleMessage(topic, str) {
       updateHealthScore(data);
       updateAlertBanners(data);
       updateLogSnapshot(data);
+      // Re-evaluate grow light icon since light level may have changed
+      updateRelayCard(relayData);
       document.getElementById('lastUpdated').textContent = `— last update: ${new Date().toLocaleTimeString()}`;
     } catch(e) { console.warn('Sensor parse:', e); }
     return;
   }
-  if (topic === TOPIC_RELAY) {
+  if (topic === T.RELAY) {
     try { relayData = JSON.parse(str); updateRelayCard(relayData); updateSnapshots(sensorData); } catch(e) {}
     return;
   }
-  if (topic === TOPIC_STATUS) {
-    setCamStatus(str.replace(/_/g, ' '));
-    return;
-  }
-  if (topic === TOPIC_AI_RESULT) {
+  if (topic === T.STATUS) { setCamStatus(str.replace(/_/g, ' ')); return; }
+  if (topic === T.AI_RESULT) {
     try {
-      const d = JSON.parse(str);
+      const d    = JSON.parse(str);
       const label = d.top_label || 'Unknown';
       const all   = d.all_results || [];
       const conf  = all.length ? all[0].confidence : 0;
@@ -240,9 +302,7 @@ function handleMessage(topic, str) {
     } catch(e) { setCamStatus('AI result error'); }
     return;
   }
-
-  // Image transfer (Base64 chunked)
-  if (topic === TOPIC_IMAGE) {
+  if (topic === T.IMAGE) {
     if (str === 'START') {
       clearTimeout(imageTimeout);
       base64Buffer = ''; isReceivingImage = true;
@@ -271,7 +331,6 @@ function handleMessage(topic, str) {
           document.getElementById('saveBtn').disabled = false;
           base64Buffer = '';
           setCamStatus('✅ Image ready — Save it, then use AI Portal for full diagnosis');
-          // Add to history
           imageHistory.unshift(imageDataUrl);
           if (imageHistory.length > 5) imageHistory.pop();
           historyIndex = -1;
@@ -296,14 +355,13 @@ function handleMessage(topic, str) {
 // ══════════════════════════════════════════════════════════
 //  CAMERA
 // ══════════════════════════════════════════════════════════
-
 function wireCamera() {
   document.getElementById('captureBtn')?.addEventListener('click', () => {
     if (!mqttClient?.connected) { setCamStatus('Not connected to MQTT — check broker'); return; }
     setCaptureBtn(true);
     setCamStatus('Sending capture command to ESP32-CAM...');
     document.getElementById('aiResultBadge').style.display = 'none';
-    mqttClient.publish(TOPIC_CAPTURE, 'capture');
+    mqttClient.publish(topics().CAPTURE, 'capture');
     clearTimeout(imageTimeout);
     imageTimeout = setTimeout(() => {
       if (!isReceivingImage && base64Buffer.length === 0) {
@@ -313,13 +371,10 @@ function wireCamera() {
       }
     }, 8000);
   });
-
   document.getElementById('saveBtn')?.addEventListener('click', () => {
     if (!imageDataUrl) return;
     const a = document.createElement('a');
-    a.href     = imageDataUrl;
-    a.download = `plant_${Date.now()}.jpg`;
-    a.click();
+    a.href = imageDataUrl; a.download = `plant_${Date.now()}.jpg`; a.click();
     setTimeout(() => setCamStatus('Image saved! → Go to AI Portal for diagnosis prompt'), 800);
   });
 }
@@ -342,7 +397,7 @@ function renderHistoryThumbs() {
       const badge = document.getElementById('historyBadge');
       if (img) img.src = imageHistory[idx];
       if (badge) {
-        badge.textContent = idx > 0 ? `HISTORY ${imageHistory.length - idx}/${imageHistory.length}` : '';
+        badge.textContent  = idx > 0 ? `HISTORY ${imageHistory.length - idx}/${imageHistory.length}` : '';
         badge.style.display = idx > 0 ? 'block' : 'none';
       }
       renderHistoryThumbs();
@@ -350,21 +405,14 @@ function renderHistoryThumbs() {
   });
 }
 
-function setCamStatus(msg) {
-  const el = document.getElementById('camStatus');
-  if (el) el.textContent = msg;
-}
+function setCamStatus(msg) { const el = document.getElementById('camStatus'); if (el) el.textContent = msg; }
 function setCaptureBtn(busy) {
   const btn = document.getElementById('captureBtn');
   if (!btn) return;
   btn.disabled  = busy;
-  btn.innerHTML = busy
-    ? '<span class="btn-icon">◌</span> PROCESSING...'
-    : '<span class="btn-icon">◎</span> CAPTURE';
+  btn.innerHTML = busy ? '<span class="btn-icon">◌</span> PROCESSING...' : '<span class="btn-icon">◎</span> CAPTURE';
 }
-function setPreviewReceiving(on) {
-  document.getElementById('cameraPreview')?.classList.toggle('receiving', on);
-}
+function setPreviewReceiving(on) { document.getElementById('cameraPreview')?.classList.toggle('receiving', on); }
 function showTransferBar(on) {
   const bar  = document.getElementById('transferBar');
   const fill = document.getElementById('transferFill');
@@ -373,7 +421,7 @@ function showTransferBar(on) {
 }
 
 // ══════════════════════════════════════════════════════════
-//  GAUGES + HEALTH + ALERTS + RELAY
+//  GAUGES + HEALTH + ALERTS
 // ══════════════════════════════════════════════════════════
 function getVal(data, key) {
   for (const k of (KEY_MAP[key] || [key])) {
@@ -382,43 +430,25 @@ function getVal(data, key) {
   return null;
 }
 
-// ── FULL CIRCLE ARC PATH ───────────────────────────────
-// Circle: cx=60, cy=60, r=50. Starts at top (12 o'clock), sweeps clockwise.
-// A small gap is left at the bottom (300° sweep instead of 360°) so it looks
-// like a "dial" rather than a completely closed ring.
+// ── Circle arc math ─────────────────────────────────────
 const CIRCLE_CX = 60, CIRCLE_CY = 60, CIRCLE_R = 50;
-const GAP_DEG   = 60;                    // degrees of gap at the bottom
-const START_DEG = 90 + GAP_DEG / 2;     // 120° (bottom-left)
-const SWEEP_DEG = 360 - GAP_DEG;        // 300°
-
+const GAP_DEG   = 60;
+const START_DEG = 90 + GAP_DEG / 2;   // 120°
+const SWEEP_DEG = 360 - GAP_DEG;      // 300°
 function degToRad(d) { return d * Math.PI / 180; }
 
 function arcPath(pct) {
   if (pct <= 0) return '';
   const clampedPct = Math.min(pct, 0.9999);
   const sweepAngle = clampedPct * SWEEP_DEG;
-
   const startRad = degToRad(START_DEG);
   const endRad   = degToRad(START_DEG + sweepAngle);
-
   const x1 = CIRCLE_CX + CIRCLE_R * Math.cos(startRad);
   const y1 = CIRCLE_CY + CIRCLE_R * Math.sin(startRad);
   const x2 = CIRCLE_CX + CIRCLE_R * Math.cos(endRad);
   const y2 = CIRCLE_CY + CIRCLE_R * Math.sin(endRad);
-
   const largeArc = sweepAngle > 180 ? 1 : 0;
-
   return `M${x1.toFixed(3)},${y1.toFixed(3)} A${CIRCLE_R},${CIRCLE_R} 0 ${largeArc},1 ${x2.toFixed(3)},${y2.toFixed(3)}`;
-}
-
-function bgArcPath() {
-  const startRad = degToRad(START_DEG);
-  const endRad   = degToRad(START_DEG + SWEEP_DEG * 0.9999);
-  const x1 = CIRCLE_CX + CIRCLE_R * Math.cos(startRad);
-  const y1 = CIRCLE_CY + CIRCLE_R * Math.sin(startRad);
-  const x2 = CIRCLE_CX + CIRCLE_R * Math.cos(endRad);
-  const y2 = CIRCLE_CY + CIRCLE_R * Math.sin(endRad);
-  return `M${x1.toFixed(3)},${y1.toFixed(3)} A${CIRCLE_R},${CIRCLE_R} 0 1,1 ${x2.toFixed(3)},${y2.toFixed(3)}`;
 }
 
 function updateGauges(data) {
@@ -472,14 +502,12 @@ function updateHealthScore(data) {
   });
   const score = Math.round((pass / checks.length) * 100);
   const clr   = score >= 80 ? '#69f0ae' : score >= 60 ? '#ffe57f' : score >= 40 ? '#ffab40' : '#ff5370';
-  const lbl   = score >= 80 ? 'HEALTHY' : score >= 60 ? 'FAIR'    : score >= 40 ? 'CAUTION' : 'CRITICAL';
+  const lbl   = score >= 80 ? 'HEALTHY' : score >= 60 ? 'FAIR' : score >= 40 ? 'CAUTION' : 'CRITICAL';
   const circ  = 2 * Math.PI * 40;
-
-  const ring = document.getElementById('ringFill');
-  const sc   = document.getElementById('healthScore');
-  const st   = document.getElementById('healthStatus');
-  const hc   = document.getElementById('healthCard');
-
+  const ring  = document.getElementById('ringFill');
+  const sc    = document.getElementById('healthScore');
+  const st    = document.getElementById('healthStatus');
+  const hc    = document.getElementById('healthCard');
   if (ring) { ring.style.strokeDashoffset = circ * (1 - pass / checks.length); ring.style.stroke = clr; }
   if (sc) sc.textContent = score + '%';
   if (st) { st.textContent = lbl; st.style.color = clr; }
@@ -507,32 +535,243 @@ function updateAlertBanners(data) {
   ).join('');
 }
 
+// ══════════════════════════════════════════════════════════
+//  RELAY CARD
+// ══════════════════════════════════════════════════════════
 function updateRelayCard(d) {
-  const state  = (d.relay  || 'UNKNOWN').toUpperCase();
+  const state   = (d.relay  || 'UNKNOWN').toUpperCase();
   const window_ = (d.window || '').toUpperCase();
-  const isOn   = state === 'ON';
-  const isRest = window_ === 'REST';
-  const isFS   = window_ === 'FAILSAFE';
+  const isRest  = window_ === 'REST';
+  const isFS    = window_ === 'FAILSAFE';
+  const isForce = window_ === 'FORCE' || forceActive;
+
+  // Light is ON when relay reports ON with a valid live reason.
+  // We filter out stale retained boot messages by ignoring reason="RECONNECTED"
+  // or empty reason, which are only published on first connect.
+  const validReasons = ['LOW_AMBIENT','BRIGHT_AMBIENT','REST_WINDOW',
+                        'FAILSAFE','FORCE_ON','ACTIVE_NO_READING'];
+  const reasonValid = validReasons.includes(d.reason);
+  const isOn = isForce || (state === 'ON' && reasonValid);
+
   const reasonMap = {
     LOW_AMBIENT:       'Dim ambient — grow light compensating',
     BRIGHT_AMBIENT:    'Bright ambient — grow light not needed',
     REST_WINDOW:       'Rest period — light disabled',
     FAILSAFE:          'Connection lost — light forced ON',
     ACTIVE_NO_READING: 'Waiting for sensor reading',
+    FORCE_ON:          'Manually forced ON by user',
   };
+
   const icon     = document.getElementById('relayIcon');
   const badge    = document.getElementById('relayBadge');
   const schedule = document.getElementById('relaySchedule');
   const reason   = document.getElementById('relayReason');
   const card     = document.getElementById('relayCard');
-  if (icon)     icon.textContent     = isOn ? '💡' : '🌑';
-  if (badge)  { badge.textContent    = state === 'UNKNOWN' ? '---' : state; badge.className = `relay-badge ${isOn ? 'on' : isRest ? 'rest' : 'off'}`; }
-  if (card)     card.className       = `relay-card ${isOn ? 'on' : isRest ? 'rest' : ''}`;
-  if (schedule) schedule.textContent = isFS ? '⚠ FAILSAFE active'
-    : isRest ? 'Rest: 12:00 PM – 8:00 AM'
-    : state === 'UNKNOWN' ? 'Waiting for signal...'
-    : 'Active: 8:00 AM – 12:00 PM';
-  if (reason) reason.textContent = reasonMap[d.reason] || d.reason || '';
+
+  if (icon) icon.textContent = isOn ? '💡' : '🌑';
+  if (badge) {
+    badge.textContent = isForce ? 'FORCE ON' : state === 'UNKNOWN' ? '---' : state === 'ON' ? 'ON' : isRest ? 'REST' : 'OFF';
+    badge.className   = `relay-badge ${isForce ? 'force' : isOn ? 'on' : isRest ? 'rest' : 'off'}`;
+  }
+  if (card) card.className = `relay-card ${isForce ? 'force' : isOn ? 'on' : isRest ? 'rest' : ''}`;
+  if (schedule) {
+    schedule.textContent = isForce        ? 'Forced ON — overrides schedule & rest period'
+        : isFS                ? '⚠ FAILSAFE active'
+        : isRest              ? 'Rest: 12:00 AM – 8:00 AM'
+        : state === 'UNKNOWN' ? 'Waiting for signal...'
+        : 'Active: 8:00 AM – 12:00 AM (midnight)';
+  }
+  if (reason) reason.textContent = isForce ? '' : (reasonMap[d.reason] || d.reason || '');
+
+  // If ESP32 broadcasts that force ended, clear local state
+  if (window_ !== 'FORCE' && forceActive && window_ !== '') _endForceLocal();
+}
+
+// ══════════════════════════════════════════════════════════
+//  FORCE LIGHT
+// ══════════════════════════════════════════════════════════
+function wireForceLight() {
+  document.getElementById('forceLightBtn')?.addEventListener('click', showForcePicker);
+  document.getElementById('abortForceBtn')?.addEventListener('click', abortForce);
+  // Close picker/warning modals on overlay click
+  document.getElementById('forceLightModal')?.addEventListener('click', e => {
+    if (e.target.id === 'forceLightModal') hideForcePicker();
+  });
+  document.getElementById('forceWarningModal')?.addEventListener('click', e => {
+    if (e.target.id === 'forceWarningModal') cancelForceWarning();
+  });
+}
+
+function populateForcePickers() {
+  const h = document.getElementById('forceHours');
+  const m = document.getElementById('forceMinutes');
+  if (h) {
+    for (let i = 0; i <= 24; i++) {
+      const o = document.createElement('option');
+      o.value = i; o.textContent = String(i).padStart(2, '0');
+      if (i === 1) o.selected = true;
+      h.appendChild(o);
+    }
+  }
+  if (m) {
+    for (let i = 0; i < 60; i++) {
+      const o = document.createElement('option');
+      o.value = i; o.textContent = String(i).padStart(2, '0');
+      m.appendChild(o);
+    }
+  }
+}
+
+function publishForce(payload) {
+  if (!mqttClient?.connected) { alert('Not connected to MQTT broker.'); return false; }
+  mqttClient.publish(topics().FORCE, JSON.stringify(payload));
+  return true;
+}
+
+function overlapsRestPeriod(totalSeconds) {
+  const now = new Date();
+  const end = new Date(now.getTime() + totalSeconds * 1000);
+  // Walk in 15-min steps up to AND including the end time
+  let check = new Date(now);
+  while (check <= end) {
+    if (check.getHours() < 8) return true;  // 0–7 = rest
+    check = new Date(check.getTime() + 15 * 60 * 1000);
+  }
+  // Also check the exact end time in case the step skipped past it
+  if (end.getHours() < 8) return true;
+  return false;
+}
+
+function _startForceLocal(seconds) {
+  clearInterval(forceTimer);
+  forceActive  = true;
+  forceEndTime = new Date(Date.now() + seconds * 1000);
+  _updateForceUI();
+  forceTimer = setInterval(() => {
+    if (!forceActive) { clearInterval(forceTimer); return; }
+    if (new Date() >= forceEndTime) { _endForceLocal(); }
+    else { _updateForceUI(); }
+  }, 1000);
+}
+
+function _endForceLocal() {
+  clearInterval(forceTimer);
+  forceActive  = false;
+  forceEndTime = null;
+  _updateForceUI();
+}
+
+function _updateForceUI() {
+  const forceSection = document.getElementById('forceOnSection');
+  const abortSection = document.getElementById('abortSection');
+  const countdownEl  = document.getElementById('forceCountdown');
+  const relayCard    = document.getElementById('relayCard');
+  const relayBadge   = document.getElementById('relayBadge');
+  const relaySchedule= document.getElementById('relaySchedule');
+
+  if (forceActive && forceEndTime) {
+    const remaining = Math.max(0, Math.floor((forceEndTime - Date.now()) / 1000));
+    const h = Math.floor(remaining / 3600);
+    const m = Math.floor((remaining % 3600) / 60);
+    const s = remaining % 60;
+    const label = h > 0
+        ? `${h}h ${String(m).padStart(2,'0')}m ${String(s).padStart(2,'0')}s`
+        : `${String(m).padStart(2,'0')}m ${String(s).padStart(2,'0')}s`;
+
+    if (forceSection)   forceSection.style.display  = 'none';
+    if (abortSection)   abortSection.style.display   = 'flex';
+    if (countdownEl)    countdownEl.textContent      = `⏱ Force ends in  ${label}`;
+    if (relayCard)      relayCard.className           = 'relay-card force';
+    if (relayBadge)   { relayBadge.textContent = 'FORCE ON'; relayBadge.className = 'relay-badge force'; }
+    if (relaySchedule)  relaySchedule.textContent    = 'Forced ON — overrides schedule & rest period';
+    const relayIcon = document.getElementById('relayIcon');
+    if (relayIcon)      relayIcon.textContent        = '💡';
+  } else {
+    if (forceSection)  forceSection.style.display  = 'flex';
+    if (abortSection)  abortSection.style.display   = 'none';
+    if (countdownEl)   countdownEl.textContent      = '';
+  }
+}
+
+function showForcePicker() {
+  const modal = document.getElementById('forceLightModal');
+  if (!modal) return;
+  const hSel = document.getElementById('forceHours');
+  const mSel = document.getElementById('forceMinutes');
+  if (hSel) hSel.value = '1';
+  if (mSel) mSel.value = '0';
+  _updatePickerPreview();
+  modal.style.display = 'flex';
+}
+
+function hideForcePicker() {
+  const modal = document.getElementById('forceLightModal');
+  if (modal) modal.style.display = 'none';
+}
+
+function _updatePickerPreview() {
+  const h     = parseInt(document.getElementById('forceHours')?.value  || '0');
+  const m     = parseInt(document.getElementById('forceMinutes')?.value || '0');
+  const total = h * 3600 + m * 60;
+  const el    = document.getElementById('forcePickerPreview');
+  if (!el) return;
+  if (total === 0) {
+    el.textContent = 'Select at least 1 minute'; el.style.color = 'var(--amber)';
+  } else if (h === 24 && m === 0) {
+    el.textContent = '24 hours (maximum)'; el.style.color = 'var(--teal)';
+  } else {
+    el.textContent = h > 0 ? `${h}h ${m}m` : `${m} minutes`; el.style.color = 'var(--teal)';
+  }
+}
+
+function confirmForceOn() {
+  const h     = parseInt(document.getElementById('forceHours')?.value  || '0');
+  const m     = parseInt(document.getElementById('forceMinutes')?.value || '0');
+  const total = h * 3600 + m * 60;
+  if (total === 0) return;
+  hideForcePicker();
+  if (overlapsRestPeriod(total)) {
+    const warn = document.getElementById('forceWarningModal');
+    if (warn) { warn.dataset.pendingSeconds = total; warn.style.display = 'flex'; return; }
+  }
+  _activateForce(total);
+}
+
+function confirmForceWarning() {
+  const warn = document.getElementById('forceWarningModal');
+  if (!warn) return;
+  const total = parseInt(warn.dataset.pendingSeconds || '0');
+  warn.style.display = 'none';
+  if (total > 0) _activateForce(total);
+}
+
+function cancelForceWarning() {
+  const warn = document.getElementById('forceWarningModal');
+  if (warn) warn.style.display = 'none';
+}
+
+function _activateForce(totalSeconds) {
+  if (!publishForce({ action: 'on', duration: totalSeconds })) return;
+  _startForceLocal(totalSeconds);
+}
+
+function abortForce() {
+  const modal = document.getElementById('abortConfirmModal');
+  if (modal) { modal.style.display = 'flex'; return; }
+  // Fallback if modal doesn't exist
+  if (!confirm('Abort force light? Returns to automatic schedule immediately.')) return;
+  publishForce({ action: 'off' });
+  _endForceLocal();
+}
+
+function confirmAbort() {
+  document.getElementById('abortConfirmModal').style.display = 'none';
+  publishForce({ action: 'off' });
+  _endForceLocal();
+}
+
+function cancelAbort() {
+  document.getElementById('abortConfirmModal').style.display = 'none';
 }
 
 // ══════════════════════════════════════════════════════════
@@ -557,9 +796,19 @@ document.getElementById('rangeChips')?.addEventListener('click', e => {
 function loadCharts() {
   const startTime = Date.now() - selectedRange;
   const gridClr   = appSettings.isDarkTheme ? 'rgba(255,255,255,0.04)' : 'rgba(0,0,0,0.06)';
-  const tickClr   = appSettings.isDarkTheme ? '#555' : '#888';
+  const tickClr   = appSettings.isDarkTheme ? '#666' : '#999';
+  const titleClr  = appSettings.isDarkTheme ? '#aaa' : '#555';
 
-  db.ref('history').orderByChild('timestamp').startAt(startTime).once('value', snap => {
+  // Pick x-axis time display format based on range
+  // date-fns adapter tokens: 'HH:mm' for time, 'MMM d' for date
+  let timeUnit, displayFormat, tooltipFmt;
+  if      (selectedRange <=   600000) { timeUnit = 'minute'; displayFormat = { minute: 'HH:mm'       }; tooltipFmt = 'HH:mm:ss';    }
+  else if (selectedRange <= 21600000) { timeUnit = 'minute'; displayFormat = { minute: 'HH:mm'       }; tooltipFmt = 'HH:mm';        }
+  else if (selectedRange <= 86400000) { timeUnit = 'hour';   displayFormat = { hour:   'HH:mm'       }; tooltipFmt = 'HH:mm';        }
+  else if (selectedRange <=259200000) { timeUnit = 'day';    displayFormat = { day:    'MMM d'        }; tooltipFmt = 'MMM d HH:mm'; }
+  else                                { timeUnit = 'day';    displayFormat = { day:    'MMM d'        }; tooltipFmt = 'MMM d HH:mm'; }
+
+  db.ref(activeProfile.firebasePath).orderByChild('timestamp').startAt(startTime).once('value', snap => {
     const raw  = snap.val() || {};
     const rows = Object.values(raw).filter(v => v && v.timestamp);
     rows.sort((a, b) => a.timestamp - b.timestamp);
@@ -567,21 +816,133 @@ function loadCharts() {
     CHART_DEFS.forEach(def => {
       const canvas = document.getElementById(def.id);
       if (!canvas) return;
+
       const pts = rows
         .filter(r => r[def.fbKey] !== undefined && r[def.fbKey] !== null)
         .map(r => ({ x: new Date(r.timestamp), y: parseFloat(r[def.fbKey]) }));
 
+      // ── Stats: min / max / avg ──────────────────────────────
+      const statsEl = document.getElementById(`stats-${def.id}`);
+      if (statsEl) {
+        if (pts.length === 0) {
+          statsEl.textContent = 'No data';
+        } else {
+          const vals   = pts.map(p => p.y);
+          const minV   = Math.min(...vals).toFixed(1);
+          const maxV   = Math.max(...vals).toFixed(1);
+          const avgV   = (vals.reduce((a, b) => a + b, 0) / vals.length).toFixed(1);
+          // Extract unit from label e.g. "Air Temp (°C)" → "°C"
+          const unitMatch = def.label.match(/\(([^)]+)\)$/);
+          const unit = unitMatch ? unitMatch[1] : '';
+          statsEl.textContent = `${pts.length} pts  ·  min ${minV}${unit}  ·  avg ${avgV}${unit}  ·  max ${maxV}${unit}`;
+        }
+      }
+
+      // ── Threshold annotation lines ──────────────────────────
+      // Map chart fbKey to THRESHOLDS key
+      const thrKeyMap = {
+        air_temperature:   'air_temp',
+        humidity:          'air_hum',
+        water_level:       'water_level',
+        light_level:       'light',
+        water_temperature: 'water_temp',
+      };
+      const thrKey = thrKeyMap[def.fbKey];
+      const thr    = thrKey ? THRESHOLDS[thrKey] : null;
+
+      const annotations = {};
+      if (thr) {
+        annotations.minLine = {
+          type: 'line', yMin: thr.min, yMax: thr.min,
+          borderColor: 'rgba(255,171,64,0.5)', borderWidth: 1, borderDash: [4, 3],
+          label: { content: `min ${thr.min}`, display: true, position: 'start',
+                   color: '#ffab40', font: { size: 8, family: 'Space Mono' }, backgroundColor: 'transparent', padding: 2 },
+        };
+        annotations.maxLine = {
+          type: 'line', yMin: thr.max, yMax: thr.max,
+          borderColor: 'rgba(255,83,112,0.5)', borderWidth: 1, borderDash: [4, 3],
+          label: { content: `max ${thr.max}`, display: true, position: 'start',
+                   color: '#ff5370', font: { size: 8, family: 'Space Mono' }, backgroundColor: 'transparent', padding: 2 },
+        };
+        // Safe zone fill between min and max
+        annotations.safeZone = {
+          type: 'box', yMin: thr.min, yMax: thr.max,
+          backgroundColor: 'rgba(105,240,174,0.04)', borderWidth: 0,
+        };
+      }
+
       if (chartInstances[def.id]) chartInstances[def.id].destroy();
       chartInstances[def.id] = new Chart(canvas, {
         type: 'line',
-        data: { datasets: [{ label: def.label, data: pts, borderColor: def.color, backgroundColor: def.color + '20', borderWidth: 2, pointRadius: 0, tension: 0.4, fill: true }] },
+        data: {
+          datasets: [{
+            label: def.label,
+            data: pts,
+            borderColor: def.color,
+            backgroundColor: def.color + '18',
+            borderWidth: 2,
+            pointRadius: 0,
+            pointHoverRadius: 4,
+            tension: 0.4,
+            fill: true,
+          }],
+        },
         options: {
-          responsive: true, maintainAspectRatio: false,
+          responsive: true,
+          maintainAspectRatio: false,
           interaction: { mode: 'index', intersect: false },
-          plugins: { legend: { labels: { color: tickClr, font: { family: 'Space Mono', size: 10 } } } },
+          plugins: {
+            legend: { display: false },   // title above serves as label
+            tooltip: {
+              backgroundColor: appSettings.isDarkTheme ? 'rgba(13,13,26,0.92)' : 'rgba(255,255,255,0.95)',
+              titleColor: def.color,
+              bodyColor:  appSettings.isDarkTheme ? '#ccc' : '#333',
+              borderColor: def.color + '44',
+              borderWidth: 1,
+              titleFont:  { family: 'Orbitron', size: 10 },
+              bodyFont:   { family: 'Space Mono', size: 11 },
+              callbacks: {
+                title: items => {
+                  const d = new Date(items[0].parsed.x);
+                  return d.toLocaleString('en-MY', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit', hour12: false });
+                },
+                label: item => {
+                  const unitMatch = def.label.match(/\(([^)]+)\)$/);
+                  const unit = unitMatch ? unitMatch[1] : '';
+                  return `  ${item.parsed.y.toFixed(1)} ${unit}`;
+                },
+              },
+            },
+            annotation: { annotations },
+          },
           scales: {
-            x: { type: 'time', time: { tooltipFormat: 'HH:mm' }, ticks: { color: tickClr, font: { size: 9 } }, grid: { color: gridClr } },
-            y: { ticks: { color: tickClr, font: { size: 9 } }, grid: { color: gridClr } },
+            x: {
+              type: 'time',
+              time: { unit: timeUnit, displayFormats: displayFormat, tooltipFormat: tooltipFmt },
+              ticks: { color: tickClr, font: { size: 9, family: 'Space Mono' }, maxRotation: 0, autoSkipPadding: 16 },
+              grid:  { color: gridClr },
+              title: {
+                display: true,
+                text: 'Time',
+                color: titleClr,
+                font: { size: 9, family: 'Orbitron' },
+                padding: { top: 4 },
+              },
+            },
+            y: {
+              ticks: { color: tickClr, font: { size: 9, family: 'Space Mono' } },
+              grid:  { color: gridClr },
+              title: {
+                display: true,
+                text: (() => {
+                  const m = def.label.match(/\(([^)]+)\)$/);
+                  return m ? m[1] : def.label;
+                })(),
+                color: titleClr,
+                font: { size: 9, family: 'Orbitron' },
+                padding: { bottom: 4 },
+              },
+            },
           },
         },
       });
@@ -600,7 +961,6 @@ function wireCopyPrompt() {
     const f = k => { const v = getVal(sensorData, k); return v !== null ? v.toFixed(1) : '--'; };
     const relayLine = (relayData.relay && relayData.relay !== 'UNKNOWN')
       ? `${relayData.relay} (${relayData.window || 'UNKNOWN'})` : '--';
-
     const prompt =
 `PLANT HEALTH DIAGNOSIS REQUEST
 ------------------------------
@@ -622,7 +982,6 @@ Based on the image provided and the sensor data above, please provide:
 2. Recommended adjustments to nutrients, water, or environment.
 3. Immediate treatment steps if a disease or deficiency is detected.
 4. Preventive measures for the next growth cycle.`;
-
     navigator.clipboard.writeText(prompt).then(() => {
       const btn = document.getElementById('copyPromptBtn');
       btn.textContent = '✓ Copied! Now open Gemini or ChatGPT ↓';
@@ -662,23 +1021,9 @@ function wireLogPage() {
   const input   = document.getElementById('logNoteInput');
   const addBtn  = document.getElementById('logAddBtn');
   const counter = document.getElementById('logCharCount');
-
-  if (input && counter) {
-    input.addEventListener('input', () => {
-      counter.textContent = `${input.value.length} chars`;
-    });
-  }
-
-  if (addBtn) {
-    addBtn.addEventListener('click', addLogEntry);
-  }
-
-  // Ctrl+Enter to submit from textarea
-  if (input) {
-    input.addEventListener('keydown', e => {
-      if (e.key === 'Enter' && e.ctrlKey) { e.preventDefault(); addLogEntry(); }
-    });
-  }
+  if (input && counter) input.addEventListener('input', () => { counter.textContent = `${input.value.length} chars`; });
+  if (addBtn) addBtn.addEventListener('click', addLogEntry);
+  if (input) input.addEventListener('keydown', e => { if (e.key === 'Enter' && e.ctrlKey) { e.preventDefault(); addLogEntry(); } });
 }
 
 function addLogEntry() {
@@ -686,39 +1031,26 @@ function addLogEntry() {
   if (!input) return;
   const note = input.value.trim();
   if (!note) return;
-
   const now = new Date();
   const timestamp = now.toLocaleDateString('en-MY', { day: '2-digit', month: 'short', year: 'numeric' })
     + '  ' + now.toLocaleTimeString('en-MY', { hour: '2-digit', minute: '2-digit', hour12: false });
-
   plantLog.unshift({ timestamp, note });
   savePlantLog();
   renderLog();
-
   input.value = '';
   const counter = document.getElementById('logCharCount');
   if (counter) counter.textContent = '0 chars';
 }
 
-function deleteLogEntry(idx) {
-  plantLog.splice(idx, 1);
-  savePlantLog();
-  renderLog();
-}
+function deleteLogEntry(idx) { plantLog.splice(idx, 1); savePlantLog(); renderLog(); }
 
 function renderLog() {
   const container = document.getElementById('logEntries');
   if (!container) return;
-
   if (plantLog.length === 0) {
-    container.innerHTML = `<div class="log-empty">
-      <div class="log-empty-icon">📋</div>
-      <div>No log entries yet</div>
-      <div class="log-empty-sub">Add observations using the notepad above</div>
-    </div>`;
+    container.innerHTML = `<div class="log-empty"><div class="log-empty-icon">📋</div><div>No log entries yet</div><div class="log-empty-sub">Add observations using the notepad above</div></div>`;
     return;
   }
-
   container.innerHTML = plantLog.map((entry, i) => `
     <div class="log-entry">
       <div class="log-entry-header">
@@ -728,4 +1060,133 @@ function renderLog() {
       <div class="log-entry-note">${entry.note.replace(/\n/g, '<br>')}</div>
     </div>
   `).join('');
+}
+
+// ══════════════════════════════════════════════════════════
+//  PROFILE SYSTEM — UI
+// ══════════════════════════════════════════════════════════
+
+function renderProfileSwitcher() {
+  const container = document.getElementById('profileSwitcher');
+  if (!container) return;
+  container.innerHTML = profiles.map(p => `
+    <div class="profile-chip ${p.id === activeProfile.id ? 'active' : ''}"
+         onclick="switchProfile('${p.id}')" title="${p.name}">
+      <span class="profile-chip-emoji">${p.emoji}</span>
+      <span class="profile-chip-name">${p.name}</span>
+    </div>`
+  ).join('');
+}
+
+function updateActiveProfileUI() {
+  // Update sidebar hint text
+  const hint = document.getElementById('statusHint');
+  if (hint) hint.textContent = `${activeProfile.emoji} ${activeProfile.name}`;
+  // Update page title area
+  const activeName = document.getElementById('activeProfileName');
+  if (activeName) activeName.textContent = `${activeProfile.emoji} ${activeProfile.name}`;
+  // Populate MQTT settings inputs with active profile values
+  const flds = ['mqttBroker','mqttPort','topicPrefix','camPrefix','firebasePath'];
+  flds.forEach(f => {
+    const el = document.getElementById(`mqtt-${f}`);
+    if (el) el.value = activeProfile[f] ?? '';
+  });
+  const nameEl = document.getElementById('mqtt-profileName');
+  if (nameEl) nameEl.value = activeProfile.name;
+  const emojiEl = document.getElementById('mqtt-profileEmoji');
+  if (emojiEl) emojiEl.value = activeProfile.emoji;
+  // Re-render profile list in settings
+  renderSettingsProfileList();
+}
+
+function renderSettingsProfileList() {
+  const container = document.getElementById('settingsProfileList');
+  if (!container) return;
+  container.innerHTML = profiles.map((p, i) => `
+    <div class="profile-row ${p.id === activeProfile.id ? 'active' : ''}">
+      <span class="profile-row-emoji">${p.emoji}</span>
+      <span class="profile-row-name">${p.name}</span>
+      <span class="profile-row-broker">${p.mqttBroker}</span>
+      <div class="profile-row-actions">
+        ${p.id !== activeProfile.id
+          ? `<button class="profile-action-btn select" onclick="switchProfile('${p.id}')">SELECT</button>`
+          : `<span class="profile-active-badge">ACTIVE</span>`}
+        ${profiles.length > 1
+          ? `<button class="profile-action-btn delete" onclick="deleteProfile('${p.id}')">✕</button>`
+          : ''}
+      </div>
+    </div>`
+  ).join('');
+}
+
+function wireProfileSettings() {
+  // Save active profile MQTT settings
+  document.getElementById('saveMqttBtn')?.addEventListener('click', () => {
+    activeProfile.name         = document.getElementById('mqtt-profileName')?.value.trim()  || activeProfile.name;
+    activeProfile.emoji        = document.getElementById('mqtt-profileEmoji')?.value.trim() || activeProfile.emoji;
+    activeProfile.mqttBroker   = document.getElementById('mqtt-mqttBroker')?.value.trim()   || activeProfile.mqttBroker;
+    activeProfile.mqttPort     = parseInt(document.getElementById('mqtt-mqttPort')?.value)  || activeProfile.mqttPort;
+    activeProfile.topicPrefix  = document.getElementById('mqtt-topicPrefix')?.value.trim()  || activeProfile.topicPrefix;
+    activeProfile.camPrefix    = document.getElementById('mqtt-camPrefix')?.value.trim()    || activeProfile.camPrefix;
+    activeProfile.firebasePath = document.getElementById('mqtt-firebasePath')?.value.trim() || activeProfile.firebasePath;
+    saveProfiles();
+    renderProfileSwitcher();
+    updateActiveProfileUI();
+    // Reconnect with updated broker/topics
+    if (mqttClient) { mqttClient.end(true); mqttClient = null; }
+    connectMQTT();
+    const msg = document.getElementById('mqttSaveMsg');
+    if (msg) { msg.style.display = 'block'; setTimeout(() => msg.style.display = 'none', 2500); }
+  });
+
+  // Add new profile
+  document.getElementById('addProfileBtn')?.addEventListener('click', () => {
+    const name = document.getElementById('newProfileName')?.value.trim();
+    if (!name) return;
+    const id = 'plant_' + Date.now();
+    const newP = {
+      ...DEFAULT_PROFILE,
+      id,
+      name,
+      emoji:        document.getElementById('newProfileEmoji')?.value.trim()  || '🌿',
+      mqttBroker:   document.getElementById('newProfileBroker')?.value.trim() || DEFAULT_PROFILE.mqttBroker,
+      mqttPort:     parseInt(document.getElementById('newProfilePort')?.value) || DEFAULT_PROFILE.mqttPort,
+      topicPrefix:  document.getElementById('newProfilePrefix')?.value.trim() || `esp32/sekkito/${id}`,
+      camPrefix:    document.getElementById('newProfileCamPrefix')?.value.trim() || `esp32cam/sekkito/${id}`,
+      firebasePath: document.getElementById('newProfileFirebase')?.value.trim() || 'history',
+    };
+    profiles.push(newP);
+    saveProfiles();
+    // Clear inputs
+    ['newProfileName','newProfileEmoji','newProfileBroker','newProfilePort',
+     'newProfilePrefix','newProfileCamPrefix','newProfileFirebase'].forEach(id => {
+      const el = document.getElementById(id);
+      if (el) el.value = '';
+    });
+    renderProfileSwitcher();
+    renderSettingsProfileList();
+    // Collapse add form
+    const form = document.getElementById('addProfileForm');
+    if (form) form.style.display = 'none';
+  });
+
+  // Toggle add-profile form
+  document.getElementById('showAddProfileBtn')?.addEventListener('click', () => {
+    const form = document.getElementById('addProfileForm');
+    if (form) form.style.display = form.style.display === 'none' ? 'block' : 'none';
+  });
+}
+
+function deleteProfile(id) {
+  if (profiles.length <= 1) return;
+  profiles = profiles.filter(p => p.id !== id);
+  if (activeProfile.id === id) {
+    activeProfile = profiles[0];
+    if (mqttClient) { mqttClient.end(true); mqttClient = null; }
+    connectMQTT();
+  }
+  saveProfiles();
+  renderProfileSwitcher();
+  renderSettingsProfileList();
+  updateActiveProfileUI();
 }

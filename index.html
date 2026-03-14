@@ -11,6 +11,7 @@
   <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-database-compat.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-date-fns@3.0.0/dist/chartjs-adapter-date-fns.bundle.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-annotation@3.0.1/dist/chartjs-plugin-annotation.min.js"></script>
   <link rel="stylesheet" href="style.css" />
 </head>
 <body>
@@ -26,7 +27,6 @@
       <div class="logo-sub">PLANT INTELLIGENCE</div>
     </div>
   </div>
-
   <nav class="nav">
     <button class="nav-btn active" data-page="dashboard"><span class="nav-icon">◉</span> Dashboard</button>
     <button class="nav-btn" data-page="analytics"><span class="nav-icon">◈</span> Analytics</button>
@@ -36,6 +36,11 @@
     <button class="nav-btn" data-page="settings"><span class="nav-icon">⚙</span> Settings</button>
   </nav>
 
+  <!-- Profile Switcher -->
+  <div class="profile-switcher-wrap">
+    <div class="profile-switcher-label">ACTIVE PLANT</div>
+    <div class="profile-switcher" id="profileSwitcher"></div>
+  </div>
   <div class="mqtt-status-bar">
     <div class="status-dot" id="statusDot"></div>
     <div>
@@ -58,6 +63,7 @@
       <h1 class="page-title">LIVE SENSORS</h1>
       <div class="last-updated" id="lastUpdated">— last update: --:--:--</div>
     </div>
+    <div class="active-profile-badge" id="activeProfileName"></div>
 
     <div class="guide-card" id="guide-dashboard">
       <div class="guide-header" onclick="toggleGuide('dashboard')">
@@ -70,7 +76,7 @@
           <li>Sensor readings arrive every ~5 seconds from the ESP32 node over MQTT.</li>
           <li>The <strong>Health Score</strong> shows how many sensors are within their ideal ranges. Adjust thresholds in Settings.</li>
           <li>Orange alert badges appear on gauge cards when a value goes outside its safe range.</li>
-          <li>The <strong>Grow Light</strong> card shows the automatic light controller status — no manual action needed.</li>
+          <li>The <strong>Grow Light</strong> card shows the automatic light controller status. Use <strong>FORCE ON</strong> to manually override the schedule for a set duration.</li>
           <li>If status shows <strong>OFFLINE</strong>, check that your ESP32 is powered on and connected to Wi-Fi.</li>
         </ul>
       </div>
@@ -95,6 +101,7 @@
         </div>
       </div>
 
+      <!-- ── RELAY CARD with Force Light controls ── -->
       <div class="relay-card" id="relayCard">
         <div class="relay-icon" id="relayIcon">💡</div>
         <div class="relay-info">
@@ -104,6 +111,26 @@
           </div>
           <div class="relay-schedule" id="relaySchedule">Waiting for signal...</div>
           <div class="relay-reason" id="relayReason"></div>
+
+          <!-- Force countdown (visible during force-on) -->
+          <div class="force-countdown" id="forceCountdown"></div>
+
+          <!-- Force ON button (shown when not force-active) -->
+          <div class="force-on-section" id="forceOnSection" style="display:flex">
+            <button class="ctrl-btn force-btn" id="forceLightBtn">
+              <span class="btn-icon">💡</span> FORCE ON
+            </button>
+            <p class="ctrl-hint">Override schedule — set custom duration up to 24h</p>
+          </div>
+
+          <!-- Abort button (shown when force-active) -->
+          <div class="abort-section" id="abortSection" style="display:none">
+            <button class="ctrl-btn abort-btn" id="abortForceBtn">
+              <span class="btn-icon">⊘</span> ABORT FORCE
+            </button>
+            <p class="ctrl-hint" style="color:var(--red);opacity:0.7">Returns light to automatic schedule immediately</p>
+          </div>
+
           <div class="relay-hint">Controlled automatically by the light controller ESP32</div>
         </div>
       </div>
@@ -112,86 +139,69 @@
     <!-- Alert banners -->
     <div id="alertBanners"></div>
 
-    <!-- Gauges — 5 sensors, no TDS -->
+    <!-- Gauges -->
     <div class="gauge-grid">
 
-      <!-- AIR TEMP -->
       <div class="gauge-card" data-key="air_temp">
         <div class="gauge-label">AIR TEMP</div>
         <div class="gauge-wrap">
           <svg viewBox="0 0 120 120" class="arc-svg">
-            <!-- background track -->
-            <path class="arc-bg" d="M25.981,110.000 A50,50 0 1,1 94.019,110.000"/>
-            <!-- fill arc -->
+            <path class="arc-bg" d="M35.000,103.301 A50,50 0 1,1 85.000,103.301"/>
             <path class="arc-fill" id="arc-air_temp" d="" stroke="#ff7f50"/>
           </svg>
-          <div class="gauge-value">
-            <span id="val-air_temp">--</span><em>°C</em>
-          </div>
+          <div class="gauge-value"><span id="val-air_temp">--</span><em>°C</em></div>
         </div>
         <div class="gauge-range">0 — 50°C</div>
         <div class="gauge-alert" id="alert-air_temp" style="display:none">⚠ OUT OF RANGE</div>
       </div>
 
-      <!-- HUMIDITY -->
       <div class="gauge-card" data-key="air_hum">
         <div class="gauge-label">HUMIDITY</div>
         <div class="gauge-wrap">
           <svg viewBox="0 0 120 120" class="arc-svg">
-            <path class="arc-bg" d="M25.981,110.000 A50,50 0 1,1 94.019,110.000"/>
+            <path class="arc-bg" d="M35.000,103.301 A50,50 0 1,1 85.000,103.301"/>
             <path class="arc-fill" id="arc-air_hum" d="" stroke="#4fc3f7"/>
           </svg>
-          <div class="gauge-value">
-            <span id="val-air_hum">--</span><em>%</em>
-          </div>
+          <div class="gauge-value"><span id="val-air_hum">--</span><em>%</em></div>
         </div>
         <div class="gauge-range">0 — 100%</div>
         <div class="gauge-alert" id="alert-air_hum" style="display:none">⚠ OUT OF RANGE</div>
       </div>
 
-      <!-- WATER TEMP -->
       <div class="gauge-card" data-key="water_temp">
         <div class="gauge-label">WATER TEMP</div>
         <div class="gauge-wrap">
           <svg viewBox="0 0 120 120" class="arc-svg">
-            <path class="arc-bg" d="M25.981,110.000 A50,50 0 1,1 94.019,110.000"/>
+            <path class="arc-bg" d="M35.000,103.301 A50,50 0 1,1 85.000,103.301"/>
             <path class="arc-fill" id="arc-water_temp" d="" stroke="#69f0ae"/>
           </svg>
-          <div class="gauge-value">
-            <span id="val-water_temp">--</span><em>°C</em>
-          </div>
+          <div class="gauge-value"><span id="val-water_temp">--</span><em>°C</em></div>
         </div>
         <div class="gauge-range">0 — 50°C</div>
         <div class="gauge-alert" id="alert-water_temp" style="display:none">⚠ OUT OF RANGE</div>
       </div>
 
-      <!-- WATER LEVEL -->
       <div class="gauge-card" data-key="water_level">
         <div class="gauge-label">WATER LEVEL</div>
         <div class="gauge-wrap">
           <svg viewBox="0 0 120 120" class="arc-svg">
-            <path class="arc-bg" d="M25.981,110.000 A50,50 0 1,1 94.019,110.000"/>
+            <path class="arc-bg" d="M35.000,103.301 A50,50 0 1,1 85.000,103.301"/>
             <path class="arc-fill" id="arc-water_level" d="" stroke="#00e5ff"/>
           </svg>
-          <div class="gauge-value">
-            <span id="val-water_level">--</span><em>%</em>
-          </div>
+          <div class="gauge-value"><span id="val-water_level">--</span><em>%</em></div>
         </div>
         <div class="gauge-range">0 — 100%</div>
         <div class="gauge-alert" id="alert-water_level" style="display:none">⚠ LOW</div>
       </div>
 
-      <!-- LIGHT LEVEL -->
       <div class="gauge-card" data-key="light">
         <div class="gauge-label">LIGHT LEVEL</div>
         <div class="gauge-wrap">
           <svg viewBox="0 0 120 120" class="arc-svg">
-            <path class="arc-bg" d="M25.981,110.000 A50,50 0 1,1 94.019,110.000"/>
+            <path class="arc-bg" d="M35.000,103.301 A50,50 0 1,1 85.000,103.301"/>
             <path class="arc-fill" id="arc-light" d="" stroke="#ffe57f"/>
           </svg>
-          <div class="gauge-value">
-            <span id="val-light">--</span><em>%</em>
-          </div>
+          <div class="gauge-value"><span id="val-light">--</span><em>%</em></div>
         </div>
         <div class="gauge-range">0 — 100%</div>
         <div class="gauge-alert" id="alert-light" style="display:none">⚠ OUT OF RANGE</div>
@@ -199,9 +209,8 @@
 
     </div>
 
-    <!-- Grow light reminder note -->
     <p class="dashboard-note">
-      The automatic light operates during 8:00 AM – 12:00 PM. During midnight the light is forced off to prevent overstressing the plant. The light will be forced ON if connection to the MQTT broker is lost or sensor readings are not received for a certain period. This is a safety measure to ensure the plant continues to receive light even if there are connectivity issues.
+      The automatic light operates during 8:00 AM – 12:00 AM (midnight). During the rest period (12:00 AM – 8:00 AM) the light is forced off to prevent overstressing the plant. Use FORCE ON to manually override for a set duration — the force period has highest priority and overrides the rest window and light threshold.
     </p>
   </section>
 
@@ -220,7 +229,6 @@
         <button class="chip" data-range="604800000">1W</button>
       </div>
     </div>
-
     <div class="guide-card" id="guide-analytics">
       <div class="guide-header" onclick="toggleGuide('analytics')">
         <span class="guide-icon">ⓘ</span>
@@ -236,13 +244,48 @@
         </ul>
       </div>
     </div>
-
     <div class="charts-list">
-      <div class="chart-card"><canvas id="chart-air_temp"></canvas></div>
-      <div class="chart-card"><canvas id="chart-air_hum"></canvas></div>
-      <div class="chart-card"><canvas id="chart-water_level"></canvas></div>
-      <div class="chart-card"><canvas id="chart-light"></canvas></div>
-      <div class="chart-card"><canvas id="chart-water_temp"></canvas></div>
+
+      <div class="chart-card">
+        <div class="chart-header">
+          <span class="chart-title" style="color:#ff7f50">AIR TEMP</span>
+          <span class="chart-stats" id="stats-chart-air_temp">—</span>
+        </div>
+        <div class="chart-canvas-wrap"><canvas id="chart-air_temp"></canvas></div>
+      </div>
+
+      <div class="chart-card">
+        <div class="chart-header">
+          <span class="chart-title" style="color:#4fc3f7">HUMIDITY</span>
+          <span class="chart-stats" id="stats-chart-air_hum">—</span>
+        </div>
+        <div class="chart-canvas-wrap"><canvas id="chart-air_hum"></canvas></div>
+      </div>
+
+      <div class="chart-card">
+        <div class="chart-header">
+          <span class="chart-title" style="color:#00e5ff">WATER LEVEL</span>
+          <span class="chart-stats" id="stats-chart-water_level">—</span>
+        </div>
+        <div class="chart-canvas-wrap"><canvas id="chart-water_level"></canvas></div>
+      </div>
+
+      <div class="chart-card">
+        <div class="chart-header">
+          <span class="chart-title" style="color:#ffe57f">LIGHT INTENSITY</span>
+          <span class="chart-stats" id="stats-chart-light">—</span>
+        </div>
+        <div class="chart-canvas-wrap"><canvas id="chart-light"></canvas></div>
+      </div>
+
+      <div class="chart-card">
+        <div class="chart-header">
+          <span class="chart-title" style="color:#69f0ae">WATER TEMP</span>
+          <span class="chart-stats" id="stats-chart-water_temp">—</span>
+        </div>
+        <div class="chart-canvas-wrap"><canvas id="chart-water_temp"></canvas></div>
+      </div>
+
     </div>
   </section>
 
@@ -254,7 +297,6 @@
       <h1 class="page-title">CAMERA HUB</h1>
       <div id="camStatus" class="cam-status-badge">READY</div>
     </div>
-
     <div class="guide-card" id="guide-camera">
       <div class="guide-header" onclick="toggleGuide('camera')">
         <span class="guide-icon">ⓘ</span>
@@ -271,9 +313,7 @@
         </ol>
       </div>
     </div>
-
     <div class="camera-layout">
-      <!-- Left: image + thumbnails -->
       <div class="camera-left">
         <div class="camera-preview" id="cameraPreview">
           <div class="no-image" id="noImageMsg">
@@ -287,26 +327,19 @@
             <div class="transfer-fill" id="transferFill"></div>
           </div>
         </div>
-        <!-- History thumbnails (shown when >1 image) -->
         <div class="img-history" id="imgHistory"></div>
       </div>
-
-      <!-- Right: controls -->
       <div class="camera-controls">
         <button class="ctrl-btn primary" id="captureBtn">
           <span class="btn-icon">◎</span> CAPTURE
         </button>
         <p class="ctrl-hint">Sends command to ESP32-CAM — image streams via MQTT</p>
-
         <button class="ctrl-btn secondary" id="saveBtn" disabled>
           <span class="btn-icon">↓</span> SAVE IMAGE
         </button>
         <p class="ctrl-hint">Downloads the image to your device</p>
-
         <div class="divider"></div>
-
         <div id="aiResultBadge" class="ai-result-badge" style="display:none"></div>
-
         <div class="divider"></div>
         <p class="ctrl-hint" style="text-align:center">
           💡 For full diagnosis, go to <strong>AI Portal</strong> → copy prompt → upload saved image to Gemini or ChatGPT
@@ -322,7 +355,6 @@
     <div class="page-header">
       <h1 class="page-title">AI DIAGNOSIS PORTAL</h1>
     </div>
-
     <div class="guide-card" id="guide-ai">
       <div class="guide-header" onclick="toggleGuide('ai')">
         <span class="guide-icon">ⓘ</span>
@@ -341,12 +373,10 @@
         <p style="margin-top:8px;color:var(--teal)">💡 Tip: Gemini is recommended — it handles plant images very well.</p>
       </div>
     </div>
-
     <div class="ai-layout">
       <div class="ai-form">
         <label class="field-label">Plant Name / Type</label>
         <input class="field-input" id="plantName" placeholder="e.g. Choy Sum, Kangkung, Basil" />
-
         <label class="field-label">Growth Stage</label>
         <select class="field-select" id="growthStage">
           <option>Seedling</option>
@@ -354,30 +384,24 @@
           <option>Flowering</option>
           <option>Harvest Ready</option>
         </select>
-
         <label class="field-label">Observed Symptoms (optional)</label>
         <textarea class="field-input" id="symptoms" rows="3"
           placeholder="e.g. Yellow leaves, wilting tips, brown spots on edges, slow growth..."></textarea>
-
         <button class="ctrl-btn primary wide" id="copyPromptBtn" style="margin-top:20px">
           ⎘ Copy AI Prompt
         </button>
         <p class="ctrl-hint" style="text-align:center;margin-top:6px">
           Sensor data is included automatically from the live snapshot on the right
         </p>
-
         <div class="portal-links">
           <a class="portal-link gemini" href="https://gemini.google.com" target="_blank">
-            Open Gemini ↗
-            <span class="portal-sub">Recommended for images</span>
+            Open Gemini ↗<span class="portal-sub">Recommended for images</span>
           </a>
           <a class="portal-link chatgpt" href="https://chatgpt.com" target="_blank">
-            Open ChatGPT ↗
-            <span class="portal-sub">Also works well</span>
+            Open ChatGPT ↗<span class="portal-sub">Also works well</span>
           </a>
         </div>
       </div>
-
       <div class="sensor-snapshot">
         <div class="snapshot-title">LIVE SENSOR SNAPSHOT</div>
         <div class="snapshot-hint">These values will be included in the prompt</div>
@@ -401,7 +425,6 @@
     <div class="page-header">
       <h1 class="page-title">PLANT LOG</h1>
     </div>
-
     <div class="guide-card" id="guide-log">
       <div class="guide-header" onclick="toggleGuide('log')">
         <span class="guide-icon">ⓘ</span>
@@ -417,8 +440,6 @@
         </ul>
       </div>
     </div>
-
-    <!-- Sensor snapshot strip -->
     <div class="log-snapshot">
       <div class="log-snap-item"><span class="log-snap-icon">🌡</span><span id="logsnap-air_temp" class="log-snap-val">--</span></div>
       <div class="log-snap-item"><span class="log-snap-icon">💧</span><span id="logsnap-air_hum" class="log-snap-val">--</span></div>
@@ -426,8 +447,6 @@
       <div class="log-snap-item"><span class="log-snap-icon">💡</span><span id="logsnap-light" class="log-snap-val">--</span></div>
       <div class="log-snap-item"><span class="log-snap-icon">🌊</span><span id="logsnap-water_temp" class="log-snap-val">--</span></div>
     </div>
-
-    <!-- Notepad-style add note -->
     <div class="log-notepad">
       <textarea id="logNoteInput" class="log-textarea" placeholder="Write your observation here...&#10;&#10;e.g. Added nutrients today, water level looks good. Noticed new leaves forming at the top."></textarea>
       <div class="log-notepad-footer">
@@ -435,8 +454,6 @@
         <button class="ctrl-btn primary" id="logAddBtn">+ ADD NOTE</button>
       </div>
     </div>
-
-    <!-- Entries list -->
     <div id="logEntries" class="log-entries"></div>
   </section>
 
@@ -447,8 +464,6 @@
     <div class="page-header">
       <h1 class="page-title">SETTINGS</h1>
     </div>
-
-    <!-- APPEARANCE -->
     <div class="settings-section-title">APPEARANCE</div>
     <div class="settings-card">
       <div class="settings-row">
@@ -474,7 +489,6 @@
       </div>
     </div>
 
-    <!-- THRESHOLDS -->
     <div class="settings-section-title" style="margin-top:28px">ALERT THRESHOLDS</div>
     <p class="settings-hint">Alerts appear on dashboard when values fall outside these ranges.</p>
     <div class="settings-card" style="margin-top:10px">
@@ -521,8 +535,89 @@
     <button class="ctrl-btn primary wide" id="saveThrBtn" style="margin-top:14px">Save Thresholds</button>
     <div id="thrSaveMsg" style="display:none;text-align:center;margin-top:10px;color:#69f0ae;font-size:11px;font-family:'Orbitron',sans-serif;letter-spacing:1px">✅ Thresholds saved</div>
 
-    <!-- ABOUT -->
-    <div class="settings-section-title" style="margin-top:28px">ABOUT</div>
+    <!-- ── MQTT CONFIGURATION ─────────────────────────── -->
+    <div class="settings-section-title" style="margin-top:28px">MQTT CONFIGURATION</div>
+    <p class="settings-hint">Settings for the currently active plant profile. Changes reconnect MQTT immediately.</p>
+    <div class="settings-card" style="margin-top:10px;padding:14px 16px">
+      <div class="mqtt-field-row">
+        <span class="mqtt-field-label">Profile Name</span>
+        <input class="thr-input mqtt-input" id="mqtt-profileName" type="text" placeholder="e.g. Balcony Mint" />
+        <input class="thr-input mqtt-input emoji-input" id="mqtt-profileEmoji" type="text" placeholder="🌱" maxlength="2" />
+      </div>
+      <div class="settings-divider"></div>
+      <div class="mqtt-field-row">
+        <span class="mqtt-field-label">MQTT Broker</span>
+        <input class="thr-input mqtt-input wide" id="mqtt-mqttBroker" type="text" placeholder="broker.hivemq.com" />
+      </div>
+      <div class="mqtt-field-row" style="margin-top:8px">
+        <span class="mqtt-field-label">WS Port</span>
+        <input class="thr-input mqtt-input" id="mqtt-mqttPort" type="number" placeholder="8884" />
+      </div>
+      <div class="settings-divider"></div>
+      <div class="mqtt-field-row">
+        <span class="mqtt-field-label">Sensor prefix</span>
+        <input class="thr-input mqtt-input wide" id="mqtt-topicPrefix" type="text" placeholder="esp32/sekkito/plant123" />
+      </div>
+      <div class="mqtt-field-row" style="margin-top:8px">
+        <span class="mqtt-field-label">CAM prefix</span>
+        <input class="thr-input mqtt-input wide" id="mqtt-camPrefix" type="text" placeholder="esp32cam/sekkito/plant123" />
+      </div>
+      <div class="settings-divider"></div>
+      <div class="mqtt-field-row">
+        <span class="mqtt-field-label">Firebase path</span>
+        <input class="thr-input mqtt-input wide" id="mqtt-firebasePath" type="text" placeholder="history" />
+      </div>
+      <p class="settings-hint" style="margin-top:8px;font-size:9px">
+        Topics are built as: <em>prefix/sensors</em>, <em>prefix/relay_status</em>, etc.
+      </p>
+    </div>
+    <button class="ctrl-btn primary wide" id="saveMqttBtn" style="margin-top:14px">Save &amp; Reconnect</button>
+    <div id="mqttSaveMsg" style="display:none;text-align:center;margin-top:10px;color:#69f0ae;font-size:11px;font-family:'Orbitron',sans-serif;letter-spacing:1px">✅ Saved — reconnecting...</div>
+
+    <!-- ── PLANT PROFILES ─────────────────────────────── -->
+    <div class="settings-section-title" style="margin-top:28px">PLANT PROFILES</div>
+    <p class="settings-hint">Switch between different plant setups. Each profile has its own MQTT broker and topics.</p>
+    <div id="settingsProfileList" style="margin-top:10px"></div>
+
+    <button class="ctrl-btn secondary wide" id="showAddProfileBtn" style="margin-top:12px">
+      <span class="btn-icon">＋</span> Add New Profile
+    </button>
+    <div id="addProfileForm" style="display:none;margin-top:14px">
+      <div class="settings-card" style="padding:14px 16px">
+        <div class="settings-section-title" style="margin-bottom:12px">NEW PROFILE</div>
+        <div class="mqtt-field-row">
+          <span class="mqtt-field-label">Name</span>
+          <input class="thr-input mqtt-input" id="newProfileName" type="text" placeholder="e.g. Tomato Pot" />
+          <input class="thr-input mqtt-input emoji-input" id="newProfileEmoji" type="text" placeholder="🍅" maxlength="2" />
+        </div>
+        <div class="settings-divider"></div>
+        <div class="mqtt-field-row">
+          <span class="mqtt-field-label">Broker</span>
+          <input class="thr-input mqtt-input wide" id="newProfileBroker" type="text" placeholder="broker.hivemq.com" />
+        </div>
+        <div class="mqtt-field-row" style="margin-top:8px">
+          <span class="mqtt-field-label">WS Port</span>
+          <input class="thr-input mqtt-input" id="newProfilePort" type="number" placeholder="8884" />
+        </div>
+        <div class="settings-divider"></div>
+        <div class="mqtt-field-row">
+          <span class="mqtt-field-label">Sensor prefix</span>
+          <input class="thr-input mqtt-input wide" id="newProfilePrefix" type="text" placeholder="esp32/sekkito/plant456" />
+        </div>
+        <div class="mqtt-field-row" style="margin-top:8px">
+          <span class="mqtt-field-label">CAM prefix</span>
+          <input class="thr-input mqtt-input wide" id="newProfileCamPrefix" type="text" placeholder="esp32cam/sekkito/plant456" />
+        </div>
+        <div class="settings-divider"></div>
+        <div class="mqtt-field-row">
+          <span class="mqtt-field-label">Firebase path</span>
+          <input class="thr-input mqtt-input wide" id="newProfileFirebase" type="text" placeholder="history_plant456" />
+        </div>
+        <button class="ctrl-btn primary wide" id="addProfileBtn" style="margin-top:14px">CREATE PROFILE</button>
+      </div>
+    </div>
+
+    <!-- ── ABOUT ────────────────────────────────────────── -->
     <div class="settings-card">
       <div class="settings-row" style="display:block;padding:14px 0">
         <div class="settings-row-label" style="font-size:13px;margin-bottom:6px">SEKKITO Plant Monitor</div>
@@ -537,7 +632,7 @@
 
 </main>
 
-<!-- AI RESULT MODAL -->
+<!-- ══ AI RESULT MODAL ═════════════════════════════════ -->
 <div class="modal-overlay" id="aiModal" style="display:none">
   <div class="modal">
     <div class="modal-icon">◆</div>
@@ -546,6 +641,85 @@
     <div id="modalResults"></div>
     <p class="modal-footer-hint">For detailed diagnosis, go to AI Portal → copy prompt → open Gemini or ChatGPT with your saved image.</p>
     <button class="modal-dismiss" id="modalDismiss">DISMISS</button>
+  </div>
+</div>
+
+<!-- ══ FORCE LIGHT — DURATION PICKER MODAL ════════════ -->
+<div class="modal-overlay" id="forceLightModal" style="display:none">
+  <div class="modal force-modal">
+    <div class="modal-icon" style="color:var(--teal)">💡</div>
+    <div class="modal-title">FORCE LIGHT ON</div>
+    <div class="modal-sub">Select duration — up to 24 hours</div>
+
+    <div class="force-picker-row">
+      <div class="force-picker-col">
+        <div class="force-picker-label">HOURS</div>
+        <div class="force-scroll-wrap">
+          <div class="force-scroll-highlight"></div>
+          <select class="force-scroll-select" id="forceHours" size="5" onchange="_updatePickerPreview()"></select>
+        </div>
+      </div>
+      <div class="force-picker-sep">:</div>
+      <div class="force-picker-col">
+        <div class="force-picker-label">MINS</div>
+        <div class="force-scroll-wrap">
+          <div class="force-scroll-highlight"></div>
+          <select class="force-scroll-select" id="forceMinutes" size="5" onchange="_updatePickerPreview()"></select>
+        </div>
+      </div>
+    </div>
+
+    <div class="force-picker-preview" id="forcePickerPreview">1h 0m</div>
+
+    <div class="force-modal-actions">
+      <button class="modal-dismiss" onclick="hideForcePicker()">CANCEL</button>
+      <button class="ctrl-btn primary" onclick="confirmForceOn()"
+        style="flex:1;border-radius:30px;font-family:var(--font-hud);font-size:11px;letter-spacing:2px">
+        CONFIRM
+      </button>
+    </div>
+  </div>
+</div>
+
+<!-- ══ FORCE LIGHT — REST PERIOD WARNING MODAL ════════ -->
+<div class="modal-overlay" id="forceWarningModal" style="display:none">
+  <div class="modal force-warn-modal">
+    <div class="modal-icon" style="color:var(--amber)">⚠</div>
+    <div class="modal-title" style="color:var(--amber)">REST PERIOD WARNING</div>
+    <div class="modal-sub">The selected duration overlaps the rest period (12:00 AM – 8:00 AM).</div>
+    <div class="force-warn-body">
+      Prolonged light exposure during the rest period may stress or damage sensitive plants.
+      Some plants require darkness to complete their growth cycle properly.
+    </div>
+    <div class="force-modal-actions">
+      <button class="modal-dismiss" onclick="cancelForceWarning()">CANCEL</button>
+      <button class="ctrl-btn" onclick="confirmForceWarning()"
+        style="flex:1;background:var(--amber);color:#000;border-radius:30px;
+               font-family:var(--font-hud);font-size:10px;letter-spacing:1px;
+               padding:10px;border:none;cursor:pointer;font-weight:700">
+        FORCE ON ANYWAY
+      </button>
+    </div>
+  </div>
+</div>
+
+<!-- ══ ABORT CONFIRMATION MODAL ══════════════════════ -->
+<div class="modal-overlay" id="abortConfirmModal" style="display:none">
+  <div class="modal" style="width:min(360px,92vw)">
+    <div class="modal-icon" style="color:var(--red)">⊘</div>
+    <div class="modal-title">ABORT FORCE LIGHT?</div>
+    <div class="modal-sub" style="margin-bottom:20px">
+      The grow light will return to its automatic schedule immediately.
+    </div>
+    <div class="force-modal-actions">
+      <button class="modal-dismiss" onclick="cancelAbort()">KEEP ON</button>
+      <button class="ctrl-btn" onclick="confirmAbort()"
+        style="flex:1;background:var(--red);color:#fff;border-radius:30px;
+               font-family:var(--font-hud);font-size:11px;letter-spacing:1px;
+               padding:10px;border:none;cursor:pointer;font-weight:700">
+        ABORT
+      </button>
+    </div>
   </div>
 </div>
 
